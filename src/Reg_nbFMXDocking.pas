@@ -1,13 +1,5 @@
 unit Reg_nbFMXDocking;
 
-(*
-  Регистрация компонентов пакета nbFMXDocking в палитре IDE.
-
-  TDockingPaneHost — основной контейнер дерева panes.
-  TDockingTabHost  — несколько PaneHost-ов как табы (итерация 2).
-  TDockingDemoPane — заглушка для тестов, только в DEBUG.
-*)
-
 interface
 
 procedure Register;

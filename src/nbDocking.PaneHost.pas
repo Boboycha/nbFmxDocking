@@ -1,35 +1,16 @@
 ﻿unit nbDocking.PaneHost;
 
 (*
-  TDockingPaneHost — визуальный контейнер N-арного дерева pane-ов.
+  Инварианты владения и rebuild-а:
 
-  Что делает:
-    - Владеет TPaneTree (FTree).
-    - Рендерит дерево как иерархию FMX TLayout + TSplitter + TRectangle.
-    - Каждый лист = TRectangle (рамка), внутри Content (TDockingPaneContent).
-    - Каждый split-узел = TLayout с детьми и TSplitter-ами между ними.
-    - Поддерживает active leaf (подсветка цветной рамкой).
-    - Слушает события контента (Split/Close/ActivateRequest)
-      и преобразует их в операции дерева.
-    - По окончании drag сплиттера (OnMouseUp) пересчитывает доли
-      в TPaneSplit. У FMX TSplitter события OnMoved нет — используем
-      OnMouseUp, так как сплиттер захватывает мышь на drag.
-
-  Стратегия rebuild:
-    На любое OnChanged дерева — полностью пересоздаём визуал.
-    Перед уничтожением старых обёрток отвязываем все TDockingPaneContent
-    (Parent := nil), чтобы FMX не уничтожил их каскадно.
-    Контент уничтожается ТОЛЬКО в CloseActive — там это делает PaneHost явно.
-
-  Владение контентом:
-    Owner контента = PaneHost (через TComponent.Owner).
-    То есть при уничтожении PaneHost все висящие контенты
-    тоже уничтожатся автоматически (стандартный FMX механизм).
-
-  Подбор нового контента при split:
-    PaneHost дёргает событие OnContentNeeded(var AContent).
-    Реализация (тестовая форма, TabHost, кто угодно) возвращает
-    свежий TDockingPaneContent. Если nil — split отменяется.
+  - Owner каждого TDockingPaneContent = PaneHost. При уничтожении хоста
+    FMX cascade подберёт и контент.
+  - На любое OnChanged дерева визуал пересоздаётся целиком. Перед сносом
+    старых обёрток DetachAllContents выставляет Parent := nil у живых
+    контентов — иначе FMX каскадно уничтожит их вместе с обёрткой.
+  - Контент уничтожается ТОЛЬКО в CloseActive (через TThread.Queue —
+    см. комментарий там). TakeActiveContent/TakeLeafContent снимают
+    контент с дерева без Free для переноса в другой хост.
 *)
 
 interface
@@ -42,22 +23,14 @@ uses
   nbDocking.Types, nbDocking.PaneTree;
 
 type
-  (* Фабрика контента — host просит потребителя дать новый pane *)
   TContentFactoryEvent = procedure(Sender: TObject;
     var AContent: TDockingPaneContent) of object;
-
-  (* Уведомление о смене активного pane *)
   TActiveLeafChangeEvent = procedure(Sender: TObject;
     AOldLeaf, ANewLeaf: TPaneLeaf) of object;
-
-  (* Уведомление об изменении заголовка контента.
-     PaneHost уже обновил свой header; потребитель может синхронизировать
-     внешние подписи вроде tab caption. *)
   TContentHeaderChangeEvent = procedure(Sender: TObject;
     AContent: TDockingPaneContent) of object;
 
-  (* Drag заголовка pane-а — фазы. Источник один (тот pane, чей header нажат),
-     цель определяет TabHost (драг идёт ВЫШЕ уровня PaneHost). *)
+  (* Drag заголовка pane транслируется наверх — drop-цель ищет TabHost. *)
   TPaneHeaderDragPhase = (phdStart, phdMove, phdEnd);
 
   TDockingPaneHost = class;
@@ -65,8 +38,7 @@ type
   TPaneHeaderDragEvent = procedure(ASender: TDockingPaneHost; ALeaf: TPaneLeaf;
     APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF) of object;
 
-  (* Информация на сплиттере: какой split-узел он "режет"
-     и индекс левого/верхнего ребёнка-соседа. *)
+  (* Какой split режет сплиттер и индекс ребёнка-соседа слева/сверху. *)
   TSplitterInfo = class
   public
     Split: TPaneSplit;
@@ -74,16 +46,6 @@ type
     constructor Create(ASplit: TPaneSplit; ALeftIdx: Integer);
   end;
 
-  (* Визуальная обёртка одного leaf-узла дерева panes.
-     Содержит title bar (заголовок + close-кнопка) поверх content-а.
-
-     Title bar:
-       - фон = Content.HeaderBgColor (Termius-style: под цвет контента)
-       - заголовок = Content.Caption
-       - close-кнопка ✕ справа (Visible on hover)
-
-     На MouseDown по любой точке frame — активирует pane.
-     Drag-handling на title bar добавится в шаге C. *)
   TPaneHeaderDragState = (hdsIdle, hdsArmed, hdsDragging);
 
   TPaneLeafFrame = class(TRectangle)
@@ -93,7 +55,7 @@ type
     FHeader: TRectangle;
     FTitleLabel: TLabel;
     FTitleEdit: TEdit;
-    FActionsLayout: TLayout;          (* контейнер кнопок справа в header *)
+    FActionsLayout: TLayout;
     FCloseBtn: TRectangle;
     FCloseGlyph: TText;
     FDragState: TPaneHeaderDragState;
@@ -124,10 +86,8 @@ type
     property Leaf: TPaneLeaf read FLeaf;
     property Header: TRectangle read FHeader;
 
-    (* Контейнер action-кнопок в правой части header.
-       Сюда можно добавлять дополнительные кнопки (split-icon, reload,
-       maximize и т.д.) — все они Align=Right. Видимость управляется
-       целиком через SetActive: на активном pane виден, на остальных скрыт. *)
+    (* Слот под доп. кнопки header (split-icon, reload, maximize и т.п.) —
+       Align=Right, видимость = (Leaf = ActiveLeaf). *)
     property ActionsLayout: TLayout read FActionsLayout;
   end;
 
@@ -135,14 +95,14 @@ type
   private
     FTree: TPaneTree;
     FActiveLeaf: TPaneLeaf;
-    FRootLayout: TLayout;                       (* визуальный корень, recreate-able *)
+    FRootLayout: TLayout;
     FBuilding: Boolean;
     FLeafFrameThickness: Single;
     FLeafFrameColor: TAlphaColor;
     FActiveLeafFrameColor: TAlphaColor;
     FHeaderHeight: Single;
     FSplitterSize: Single;
-    FSplitterInfos: TObjectList<TSplitterInfo>; (* owns *)
+    FSplitterInfos: TObjectList<TSplitterInfo>;
     FOnContentNeeded: TContentFactoryEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
@@ -179,52 +139,24 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
-    (* High-level API *)
     procedure SetInitialContent(AContent: TDockingPaneContent);
     function SplitActive(ADirection: TSplitDirection;
       ANewContent: TDockingPaneContent = nil): TPaneLeaf;
     procedure CloseActive;
     procedure ActivateContent(AContent: TDockingPaneContent);
-
-    (* True, если дерево пусто (нет ни одного pane).
-       После CloseActive последнего листа host переходит в это состояние. *)
     function IsEmpty: Boolean;
 
-    (* === Поддержка drag-and-drop (итерация 2.5) === *)
-
-    (* Снимает контент с активного pane и возвращает его. Контент НЕ уничтожается
-       (в отличие от CloseActive, который Free-ит). Используется при перетаскивании
-       таба в split-зону другого PaneHost-а — забираем контент, переносим.
-
-       После вызова активный лист удаляется из дерева; если он был последним,
-       дерево опустеет (как и при обычном CloseActive). *)
+    (* В отличие от CloseActive — контент НЕ уничтожается, лист удаляется
+       из дерева; для drag-drop переноса в другой хост. *)
     function TakeActiveContent: TDockingPaneContent;
-
-    (* То же что TakeActiveContent, но для произвольного листа.
-       Используется при drag-е header-а pane-а: тащимый pane может быть
-       не активным в своём PaneHost-е. *)
     function TakeLeafContent(ALeaf: TPaneLeaf): TDockingPaneContent;
 
-    (* Вызывается из TPaneLeafFrame при drag header-а. Транслирует событие
-       наверх — обычно его слушает TabHost, который видит соседние табы
-       и активный pane для drop-цели. *)
     procedure NotifyHeaderDrag(ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase;
       const AScreenPt: TPointF);
 
-    (* Шорткат — контент активного pane без снятия. nil если дерево пусто. *)
     function ActiveLeafContent: TDockingPaneContent;
-
-    (* Bounds активного листа в локальных координатах PaneHost.
-       Нужно потребителю (TabHost), чтобы позиционировать drop-overlay
-       точно над активным pane. Возвращает RectF(0,0,0,0) если ActiveLeaf nil. *)
     function ActiveLeafBounds: TRectF;
-
-    (* Найти лист под точкой (точка в локальных координатах PaneHost).
-       Возвращает nil, если точка не попадает ни в один лист. *)
     function FindLeafAt(const APt: TPointF): TPaneLeaf;
-
-    (* Bounds произвольного листа в локальных координатах PaneHost.
-       Для конкретного leaf, не обязательно активного. *)
     function LeafBounds(ALeaf: TPaneLeaf): TRectF;
 
     property Tree: TPaneTree read FTree;
@@ -250,8 +182,6 @@ type
 
 implementation
 
-(* TPaneLeafFrame: реализация ниже, после TSplitterInfo. *)
-
 { TSplitterInfo }
 
 constructor TSplitterInfo.Create(ASplit: TPaneSplit; ALeftIdx: Integer);
@@ -262,21 +192,20 @@ begin
 end;
 
 type
-  (* Доступ к protected Capture/ReleaseCapture у FHeader.
-     Стандартный Delphi трюк — protected методы базового класса
-     доступны из метода-наследника. *)
+  (* Доступ к protected Capture/ReleaseCapture FHeader через cast-наследника. *)
   TControlAccess = class(TControl);
 
 { TPaneLeafFrame }
 
 constructor TPaneLeafFrame.Create(AHost: TDockingPaneHost; ALeaf: TPaneLeaf);
 begin
-  inherited Create(AHost);   (* Owner = host, FMX уничтожит каскадно *)
+  inherited Create(AHost);
   FHost := AHost;
   FLeaf := ALeaf;
   XRadius:=10;
   YRadius:=10;
-  TagObject := ALeaf;    (* нужно для FindFrameRectFor *)
+  (* TagObject связывает frame с листом для FindFrameRectFor. *)
+  TagObject := ALeaf;
 
   Fill.Kind := TBrushKind.None;
   Stroke.Color := AHost.LeafFrameColor;
@@ -286,7 +215,6 @@ begin
                         AHost.LeafFrameThickness, AHost.LeafFrameThickness);
   OnMouseDown := HandleFrameMouseDown;
 
-  (* Header сверху *)
   FHeader := TRectangle.Create(Self);
   FHeader.Corners:=[TCorner.TopLeft, TCorner.TopRight];
   FHeader.XRadius:=10;
@@ -302,22 +230,16 @@ begin
   FHeader.OnMouseMove := HandleHeaderMouseMove;
   FHeader.OnMouseUp := HandleHeaderMouseUp;
 
-  (* Контейнер action-кнопок справа. Изначально невидимый —
-     SetActive() покажет на активном pane.
-     Сюда же можно добавлять дополнительные кнопки в будущем
-     (split-icon, reload, maximize и т.п.). *)
   FActionsLayout := TLayout.Create(Self);
   FActionsLayout.Parent := FHeader;
   FActionsLayout.Align := TAlignLayout.Right;
-  FActionsLayout.Width := 24;       (* ширина "под текущие кнопки",
-                                       расширится при добавлении новых *)
+  FActionsLayout.Width := 24;
   FActionsLayout.Visible := False;
   FActionsLayout.HitTest := True;
 
-  (* Caption-лейбл — слева, расширяется на всё доступное место.
-     Align=Client = всё, что осталось от FActionsLayout (Align=Right).
-     ВАЖНО: FCaptionLabel создаётся ПОСЛЕ FActionsLayout — это даёт FMX
-     правильный порядок Children для Align-выкладки. *)
+  (* Порядок создания важен: FTitleLabel (Align=Client) после
+     FActionsLayout (Align=Right) — иначе FMX отдаст Client всё, не
+     оставив Right-слоту места. *)
   FTitleLabel := TLabel.Create(Self);
   FTitleLabel.Parent := FHeader;
   FTitleLabel.Align := TAlignLayout.Client;
@@ -336,7 +258,6 @@ begin
   FTitleEdit.OnExit := HandleEditExit;
   FTitleEdit.OnKeyDown := HandleEditKeyDown;
 
-  (* Close-кнопка внутри FActionsLayout, Align=Right *)
   FCloseBtn := TRectangle.Create(Self);
   FCloseBtn.Parent := FActionsLayout;
   FCloseBtn.Align := TAlignLayout.Right;
@@ -438,8 +359,6 @@ begin
     Stroke.Color := FHost.LeafFrameColor;
     Stroke.Thickness := FHost.LeafFrameThickness;
   end;
-  (* Все action-кнопки (close, и любые добавленные позже) видны
-     ТОЛЬКО на активном pane. Переключаем целиком layout-контейнер. *)
   if FActionsLayout <> nil then
     FActionsLayout.Visible := AIsActive;
 end;
@@ -480,7 +399,6 @@ begin
   if FLeaf = nil then Exit;
   if FEditingTitle then Exit;
 
-  (* Клик в заголовок активирует pane как обычный hit на frame *)
   if FLeaf <> FHost.ActiveLeaf then
     FHost.ActiveLeaf := FLeaf;
 
@@ -573,8 +491,8 @@ begin
 
   FBuilding := False;
   FLeafFrameThickness := 1.0;
-  FLeafFrameColor := TAlphaColor($FFCCCCCC);         (* светло-серый *)
-  FActiveLeafFrameColor := TAlphaColor($FF3D6FB5);   (* синий *)
+  FLeafFrameColor := TAlphaColor($FFCCCCCC);
+  FActiveLeafFrameColor := TAlphaColor($FF3D6FB5);
   FHeaderHeight := 24;
   FSplitterSize := 4.0;
   FSplitterInfos := TObjectList<TSplitterInfo>.Create(True);
@@ -586,16 +504,11 @@ end;
 
 destructor TDockingPaneHost.Destroy;
 begin
-  (* Порядок:
-     1) Контенты висят с Owner=Self — их FMX уничтожит сам после inherited.
-     2) Дерево не владеет ничем кроме своих узлов — освобождаем.
-     3) FSplitterInfos владеет своими TSplitterInfo — освобождаем. *)
   FSplitterInfos.Free;
   FTree.Free;
+  (* Контенты висят с Owner=Self — их FMX уничтожит каскадом. *)
   inherited;
 end;
-
-(* === Подписка/события === *)
 
 procedure TDockingPaneHost.WireContent(AContent: TDockingPaneContent);
 begin
@@ -642,8 +555,6 @@ var
   Leaf: TPaneLeaf;
   Frame: TRectangle;
 begin
-  (* Caption или цвета header изменились — найти соответствующий
-     TPaneLeafFrame и пере-применить визуал. *)
   Leaf := FindLeafByContent(Sender);
   if Leaf = nil then Exit;
   Frame := FindFrameRectFor(FRootLayout, Leaf);
@@ -660,8 +571,6 @@ begin
     RebuildVisualTree;
 end;
 
-(* === High-level API === *)
-
 procedure TDockingPaneHost.SetInitialContent(AContent: TDockingPaneContent);
 begin
   if FTree.Root <> nil then
@@ -674,7 +583,7 @@ begin
   AContent.Parent := nil;
   WireContent(AContent);
 
-  FTree.SetRootContent(AContent);   (* OnChanged → RebuildVisualTree *)
+  FTree.SetRootContent(AContent);
   InternalSetActive(FTree.FirstLeaf);
 end;
 
@@ -690,7 +599,7 @@ begin
   begin
     if Assigned(FOnContentNeeded) then
       FOnContentNeeded(Self, ANewContent);
-    if ANewContent = nil then Exit;   (* фабрика отказала — split отменён *)
+    if ANewContent = nil then Exit;
   end;
 
   if ANewContent.Owner <> Self then
@@ -713,31 +622,22 @@ begin
   ToCloseContent := ToClose.Content;
   if (ToCloseContent <> nil) and (not ToCloseContent.CanClose) then Exit;
 
-  (* Деактивировать контент до того, как он будет уничтожен *)
   if ToCloseContent <> nil then
+  begin
     ToCloseContent.Deactivate;
-
-  (* Отвязать контент от FMX-родителя, чтобы он не уничтожился
-     каскадно при пересборке визуала *)
-  if ToCloseContent <> nil then
+    (* Parent := nil — иначе FMX уничтожит контент каскадом при rebuild. *)
     ToCloseContent.Parent := nil;
+  end;
 
-  (* КРИТИЧНО: обнулить FActiveLeaf ДО CloseLeaf.
-     CloseLeaf вызовет ALeaf.Free, и FActiveLeaf станет dangling.
-     OnChanged внутри CloseLeaf триггерит RebuildVisualTree,
-     а далее мы вызываем InternalSetActive — без обнуления
-     получили бы AV на чтении FActiveLeaf.Content. *)
+  (* FActiveLeaf := nil ДО CloseLeaf: иначе после Free листа указатель
+     повиснет, а RebuildVisualTree → InternalSetActive прочитает Content. *)
   FActiveLeaf := nil;
 
-  FTree.CloseLeaf(ToClose);   (* лист уничтожен внутри, контент — нет *)
+  FTree.CloseLeaf(ToClose);
 
-  (* КРИТИЧНО: Free контента откладываем на следующий tick
-     очереди сообщений. Причина: мы сейчас внутри стека
-     TButton.OnClick кнопки "✕ Close", которая является потомком
-     ToCloseContent. Немедленный Free уничтожит эту кнопку,
-     и при возврате управления в FMX framework (TButton.Click → ...)
-     получим AV на висячей кнопке.
-     TThread.Queue выполнит Free после возврата в Application.Run. *)
+  (* Free контента откладываем: мы внутри стека OnClick кнопки "✕",
+     которая является потомком ToCloseContent. Синхронный Free убьёт
+     кнопку, FMX вернётся в TButton.Click → AV. *)
   if ToCloseContent <> nil then
     TThread.Queue(nil,
       procedure
@@ -745,13 +645,10 @@ begin
         ToCloseContent.Free;
       end);
 
-  (* Активируем оставшийся лист (или nil если дерево пусто) *)
   InternalSetActive(FTree.FirstLeaf);
 
-  (* Особый случай: дерево опустело. InternalSetActive не вызвал
-     OnActiveLeafChanged (там early-exit при ALeaf = FActiveLeaf = nil).
-     Дёрнем явно — TabHost и другие подписчики должны узнать,
-     что host опустошён, чтобы решить что делать дальше. *)
+  (* Пустое дерево: InternalSetActive вышел рано (nil = nil) — стреляем
+     событием вручную, чтобы TabHost закрыл соответствующий таб. *)
   if (FActiveLeaf = nil) and Assigned(FOnActiveLeafChanged) then
     FOnActiveLeafChanged(Self, nil, nil);
 end;
@@ -788,20 +685,14 @@ begin
   Result := ToClose.Content;
   if Result = nil then Exit;
 
-  (* Похоже на CloseActive, но БЕЗ уничтожения контента.
-     Отвязываем контент от FMX-родителя; вызывающий перевесит его на новый. *)
+  (* CloseActive минус Free контента — caller перевесит его на новый Parent. *)
   Result.Deactivate;
   Result.Parent := nil;
 
-  (* Обнуляем FActiveLeaf до CloseLeaf — иначе dangling pointer в InternalSetActive
-     (та же причина, что в CloseActive). *)
   FActiveLeaf := nil;
-
-  FTree.CloseLeaf(ToClose);   (* лист уничтожен, контент жив *)
-
+  FTree.CloseLeaf(ToClose);
   InternalSetActive(FTree.FirstLeaf);
 
-  (* Если дерево опустело — стрельнуть событием, чтобы TabHost закрыл таб *)
   if (FActiveLeaf = nil) and Assigned(FOnActiveLeafChanged) then
     FOnActiveLeafChanged(Self, nil, nil);
 end;
@@ -814,8 +705,6 @@ end;
 function TDockingPaneHost.TakeLeafContent(ALeaf: TPaneLeaf): TDockingPaneContent;
 begin
   if ALeaf = nil then Exit(nil);
-  (* Активируем сначала — переиспользуем существующую TakeActiveContent,
-     чтобы не дублировать аккуратную последовательность снятия. *)
   if ALeaf <> FActiveLeaf then
     InternalSetActive(ALeaf);
   Result := TakeActiveContent;
@@ -913,8 +802,6 @@ begin
     FOnActiveLeafChanged(Self, OldLeaf, FActiveLeaf);
 end;
 
-(* === Поиск === *)
-
 function TDockingPaneHost.FindLeafByContent(
   AContent: TDockingPaneContent): TPaneLeaf;
 var
@@ -929,8 +816,6 @@ begin
     end);
   Result := Found;
 end;
-
-(* === Перестроение визуала === *)
 
 procedure TDockingPaneHost.DetachAllContents;
 begin
@@ -978,9 +863,7 @@ begin
 
     UpdateActiveFrames;
 
-    (* Termius-style: если в дереве только один лист, заголовок не нужен —
-       у юзера и так понятно что это за pane (видно по табу).
-       При появлении split (LeafCount >= 2) заголовки появляются у всех. *)
+    (* Termius-style: один лист — заголовок прячем, имя есть на табе. *)
     ShowHeaders := FTree.LeafCount >= 2;
     ApplyHeaderVisibility(FRootLayout, ShowHeaders);
   finally
@@ -1036,18 +919,14 @@ begin
   SplitLayout.TagObject := ASplit;
   SplitLayout.OnResize := HandleSplitLayoutResize;
 
-  (* Замораживаем realign на время построения детей.
-     FMX AlignObjects сортирует Top/Left-aligned контролы по Position.Top/Left.
-     Если разрешить промежуточные realign-ы, у уже размещённых сплиттеров
-     Position.Y становится > 0, и каждый новый pane (Position.Y=0) попадает
-     в AlignList ПЕРЕД ними — сплиттеры выдавливаются в самый низ.
-     При одном финальном realign внутри EndUpdate у всех новых детей
-     Position=0, и InsertBefore сохраняет порядок добавления. *)
+  (* FMX AlignObjects сортирует Top/Left-children по Position. Без
+     BeginUpdate уже размещённый сплиттер получает Position.Y > 0, а новый
+     pane (Position.Y = 0) попадает в AlignList ПЕРЕД ним — сплиттеры
+     уезжают вниз. Один realign в EndUpdate сохраняет порядок вставки. *)
   SplitLayout.BeginUpdate;
   try
-    (* На момент Build SplitLayout ещё может не иметь финального размера
-       (если он Align=Client). Поэтому берём приближение из контейнера —
-       первый OnResize всё поправит. *)
+    (* SplitLayout c Align=Client ещё может не иметь размера — берём
+       приближение, первый OnResize пересчитает. *)
     if AContainer is TControl then
     begin
       if ASplit.Orientation = poHorizontal then
@@ -1073,7 +952,6 @@ begin
 
       BuildNode(ASplit.Children[I], SplitLayout, ChildAlign, ChildSize);
 
-      (* Между детьми — сплиттер, после последнего — нет *)
       if I < ASplit.ChildCount - 1 then
       begin
         Splitter := TSplitter.Create(Self);
@@ -1089,8 +967,8 @@ begin
           Splitter.Height := FSplitterSize;
         end;
         Splitter.MinSize := 50;
-        (* OnMoved в FMX TSplitter нет — используем OnMouseUp.
-           Сплиттер capture-ит мышь на drag, отпуск приходит сюда же. *)
+        (* FMX TSplitter не эмитит OnMoved — capture мыши на drag,
+           отпуск приходит в OnMouseUp. *)
         Splitter.OnMouseUp := HandleSplitterMouseUp;
 
         Info := TSplitterInfo.Create(ASplit, I);
@@ -1104,8 +982,6 @@ begin
 
   Result := SplitLayout;
 end;
-
-(* === Resize и splitter === *)
 
 procedure TDockingPaneHost.HandleSplitLayoutResize(Sender: TObject);
 var
@@ -1137,7 +1013,6 @@ begin
   EffectiveSize := TotalSize - TotalSplitterSize;
   if EffectiveSize <= 0 then Exit;
 
-  (* Собираем дочерние pane-визуалы (пропускаем сплиттеры) *)
   PaneVisuals := TList<TFmxObject>.Create;
   try
     for I := 0 to ASplitLayout.ChildrenCount - 1 do
@@ -1147,7 +1022,7 @@ begin
       PaneVisuals.Add(Obj);
     end;
 
-    (* Меняем размер всех кроме последнего (он Align=Client, заберёт остаток) *)
+    (* Последний ребёнок Align=Client — он сам заберёт остаток. *)
     for I := 0 to PaneVisuals.Count - 2 do
     begin
       if I >= ASplit.ChildCount then Break;
@@ -1214,8 +1089,8 @@ begin
     Inc(ChildIdx);
   end;
 
-  (* Обновляем доли. SetSize не триггерит OnChanged дерева
-     (структура не менялась — только пропорции). *)
+  (* SetSize меняет только пропорции — OnChanged дерева не зовётся,
+     rebuild визуала не нужен. *)
   for I := 0 to High(Sizes) do
     ASplit.SetSize(I, Sizes[I]);
 end;

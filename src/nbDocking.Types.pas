@@ -1,21 +1,10 @@
 ﻿unit nbDocking.Types;
 
 (*
-  Базовые типы системы докинга nbFMXDocking.
-
-  Здесь живут енумы, базовый класс содержимого pane и события.
-  Никакой UI-логики — только контракты, чтобы их можно было
-  тащить в любые юниты без зависимости от визуального слоя.
-
-  Класс TDockingPaneContent — абстрактная "вкладка/панель",
-  которую можно положить в pane. Терминал, SFTP, сниппеты, логи —
-  все будут наследниками (в составе nbDevOpsCockpit или иного
-  потребляющего пакета).
-
-  Декаплинг: контент общается с PaneHost ТОЛЬКО через события
-    OnSplitRequest / OnCloseRequest / OnActivateRequest.
-    Контент не знает, в каком PaneHost он живёт.
-    PaneHost подписывается при добавлении контента.
+  Инвариант декаплинга: TDockingPaneContent общается с хостом только
+  через события (OnSplitRequest / OnCloseRequest / OnActivateRequest /
+  OnHeaderChanged). Прямых ссылок на хост у контента нет — это позволяет
+  использовать любой потомок (терминал, SFTP, логи) в любом контейнере.
 *)
 
 interface
@@ -25,32 +14,17 @@ uses
   FMX.Types, FMX.Layouts, FMX.Controls;
 
 type
-  (* Направление split-операции относительно текущего pane.
-     "Слева/справа" => горизонтальный split (дети в строку).
-     "Сверху/снизу" => вертикальный split (дети в столбец). *)
   TSplitDirection = (sdLeft, sdRight, sdAbove, sdBelow);
-
-  (* Ориентация split-узла в дереве *)
-  TPaneOrientation = (
-    poHorizontal,   (* дети расположены в строку (split по горизонтали) *)
-    poVertical      (* дети расположены в столбец (split по вертикали) *)
-  );
+  TPaneOrientation = (poHorizontal, poVertical);
 
   TDockingPaneContent = class;
 
-  (* События запроса split/close/activate, которые контент эмитит наверх *)
   TPaneSplitRequestEvent = procedure(Sender: TDockingPaneContent;
     ADirection: TSplitDirection) of object;
   TPaneCloseRequestEvent = procedure(Sender: TDockingPaneContent) of object;
   TPaneActivateRequestEvent = procedure(Sender: TDockingPaneContent) of object;
-
-  (* Изменился стиль заголовка контента (цвета, caption) — PaneHost
-     подпишется и обновит свой title bar для этого pane. *)
   TPaneHeaderChangedEvent = procedure(Sender: TDockingPaneContent) of object;
 
-  (* Базовый класс для любого содержимого pane.
-     Терминал, SFTP, сниппеты, логи — все будут наследниками.
-     Для тестов есть TDockingDemoPane в nbDocking.Demo. *)
   TDockingPaneContent = class(TLayout)
   private
     FCaption: string;
@@ -77,15 +51,14 @@ type
   public
     constructor Create(AOwner: TComponent); override;
 
-    (* Вызывается host-ом при изменении активного pane *)
     procedure Activate;
     procedure Deactivate;
 
-    (* Можно ли сейчас закрыть pane? Например, терминал может спросить
-       подтверждение, если есть незавершённая команда. По умолчанию — да. *)
+    (* Default = True; override чтобы заблокировать закрытие (например,
+       терминал с незавершённой командой просит подтверждение). *)
     function CanClose: Boolean; virtual;
 
-    (* События — подписывается PaneHost. Потомки контента сами их не трогают. *)
+    (* Подписывается PaneHost — потомки сами трогать события не должны. *)
     property OnSplitRequest: TPaneSplitRequestEvent
       read FOnSplitRequest write FOnSplitRequest;
     property OnCloseRequest: TPaneCloseRequestEvent
@@ -98,10 +71,7 @@ type
     property Caption: string read FCaption write SetCaption;
     property Glyph: string read FGlyph write FGlyph;
 
-    (* Цвета title bar, который PaneHost рисует над контентом.
-       Termius-style: title bar в тон с фоном content-а.
-       Терминал-наследник возьмёт эти значения из своей Terminal.Theme.
-       DemoPane выставит под цвет своего fill. *)
+    (* Termius-style: цвета title bar в тон с фоном контента. *)
     property HeaderBgColor: TAlphaColor read FHeaderBgColor
       write SetHeaderBgColor default TAlphaColor($FF2A2A2A);
     property HeaderTextColor: TAlphaColor read FHeaderTextColor
@@ -118,8 +88,8 @@ constructor TDockingPaneContent.Create(AOwner: TComponent);
 begin
   inherited;
   Align := TAlignLayout.Client;
-  FHeaderBgColor := TAlphaColor($FF2A2A2A);     (* тёмный по умолчанию *)
-  FHeaderTextColor := TAlphaColor($FFE0E0E0);   (* светлый текст *)
+  FHeaderBgColor := TAlphaColor($FF2A2A2A);
+  FHeaderTextColor := TAlphaColor($FFE0E0E0);
 end;
 
 procedure TDockingPaneContent.Activate;
@@ -139,12 +109,10 @@ end;
 
 procedure TDockingPaneContent.DoActivate;
 begin
-  (* потомки могут переопределить — поставить фокус, обновить статусбар и т.д. *)
 end;
 
 procedure TDockingPaneContent.DoDeactivate;
 begin
-  (* потомки могут переопределить *)
 end;
 
 procedure TDockingPaneContent.DoHeaderChanged;

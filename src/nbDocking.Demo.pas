@@ -1,15 +1,7 @@
 ﻿unit nbDocking.Demo;
 
 (*
-  TDockingDemoPane — заглушка для проверки движка докинга
-  без подключения настоящего терминала или SFTP.
-
-  Состав:
-    - цветной фон (TRectangle, случайный цвет из палитры)
-    - крупный label с номером pane
-    - 5 кнопок: Split←, Split↑, Split↓, Split→, ✕ Close
-    - клик в любое место активирует pane (через RequestActivate)
-    - клики по кнопкам эмитят RequestSplit / RequestClose
+  DEBUG-заглушка для проверки движка докинга без реального контента.
 *)
 
 interface
@@ -45,8 +37,6 @@ type
   public
     constructor Create(AOwner: TComponent); override;
 
-    (* Удобная фабрика — выдаёт нужный цвет и номер
-       для следующего pane при split-е *)
     class function CreateNext(AOwner: TComponent): TDockingDemoPane;
 
     property Number: Integer read FNumber write SetNumber;
@@ -62,16 +52,11 @@ var
   GNextNumber: Integer = 0;
 
 const
-  (* Приятная палитра — синие, зелёные, оранжевые, фиолетовые пастельные *)
   PALETTE: array[0..7] of TAlphaColor = (
-    TAlphaColor($FF89B4FA),  (* light blue *)
-    TAlphaColor($FFA6E3A1),  (* light green *)
-    TAlphaColor($FFF9E2AF),  (* light yellow *)
-    TAlphaColor($FFFAB387),  (* light orange *)
-    TAlphaColor($FFCBA6F7),  (* light purple *)
-    TAlphaColor($FFF38BA8),  (* light pink *)
-    TAlphaColor($FF94E2D5),  (* light teal *)
-    TAlphaColor($FFEBA0AC)   (* light red *)
+    TAlphaColor($FF89B4FA), TAlphaColor($FFA6E3A1),
+    TAlphaColor($FFF9E2AF), TAlphaColor($FFFAB387),
+    TAlphaColor($FFCBA6F7), TAlphaColor($FFF38BA8),
+    TAlphaColor($FF94E2D5), TAlphaColor($FFEBA0AC)
   );
 
 { TDockingDemoPane }
@@ -107,7 +92,6 @@ var
   BtnRow: TLayout;
   CenterBox: TLayout;
 begin
-  (* Фон *)
   FBg := TRectangle.Create(Self);
   FBg.Parent := Self;
   FBg.Align := TAlignLayout.Client;
@@ -117,7 +101,6 @@ begin
   FBg.HitTest := True;
   FBg.OnMouseDown := HandleBgMouseDown;
 
-  (* Центральный бокс с label и кнопками *)
   CenterBox := TLayout.Create(Self);
   CenterBox.Parent := FBg;
   CenterBox.Align := TAlignLayout.Center;
@@ -125,7 +108,6 @@ begin
   CenterBox.Height := 160;
   CenterBox.HitTest := False;
 
-  (* Label с номером *)
   FNumberLabel := TLabel.Create(Self);
   FNumberLabel.Parent := CenterBox;
   FNumberLabel.Align := TAlignLayout.Top;
@@ -137,7 +119,6 @@ begin
   FNumberLabel.StyledSettings := [];
   UpdateLabel;
 
-  (* Ряд кнопок *)
   BtnRow := TLayout.Create(Self);
   BtnRow.Parent := CenterBox;
   BtnRow.Align := TAlignLayout.Top;

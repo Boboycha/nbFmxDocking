@@ -1,35 +1,16 @@
 ﻿unit nbDocking.PaneTree;
 
 (*
-  N-арное дерево panes для системы докинга.
+  N-арное дерево panes. Ключевые инварианты:
 
-  Узлы:
-    TPaneSplit — внутренний узел: ориентация + N детей + N долей размера
-    TPaneLeaf  — лист: держит TDockingPaneContent
-
-  Алгоритм Split:
-    Если родитель текущего листа уже той же ориентации,
-      что и направление split — новый лист добавляется соседом
-      в существующий split-узел.
-    Иначе — лист оборачивается в новый split-узел из двух детей.
-    Это держит дерево минимально вложенным (как в iTerm2/tmux).
-
-  Алгоритм Close:
-    Лист удаляется из родителя.
-    Если у родителя остался один ребёнок — родитель схлопывается
-    в этого единственного ребёнка (каскадом вверх).
-    Закрытие последнего листа делает дерево пустым.
-
-  Размеры (Sizes) — нормализованные доли (сумма = 1.0).
-    При InsertChild новый получает долю 1/N, остальные масштабируются.
-    При RemoveChild освободившаяся доля распределяется пропорционально.
-
-  Контент (TDockingPaneContent) дерево НЕ уничтожает.
-  Им владеет визуальный слой (TDockingPaneHost).
-  Дерево хранит только ссылки.
-
-  Для UI: после любой структурной операции дерево вызывает
-  событие OnChanged. Слой UI перестраивает визуал.
+  - Split минимально вкладывает: если родитель листа уже имеет нужную
+    ориентацию, новый лист становится соседом, иначе лист оборачивается
+    в новый split (как в iTerm2/tmux).
+  - Close с одним оставшимся ребёнком схлопывает split в этого ребёнка,
+    каскадно вверх.
+  - Sizes — нормализованные доли, сумма = 1.0, диапазон [0.05, 0.95].
+  - TDockingPaneContent дерево НЕ владеет — только ссылки. Освобождением
+    занимается визуальный слой (TDockingPaneHost через TComponent.Owner).
 *)
 
 interface
@@ -108,20 +89,11 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    (* Установить корневой лист с заданным контентом.
-       Дерево должно быть пустым. *)
     function SetRootContent(AContent: TDockingPaneContent): TPaneLeaf;
-
-    (* Разделить лист в указанном направлении, добавив новый pane.
-       Возвращает только что созданный лист. *)
     function SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
       ANewContent: TDockingPaneContent): TPaneLeaf;
-
-    (* Закрыть лист. Контент НЕ уничтожается здесь —
-       это забота UI-слоя (PaneHost). *)
     procedure CloseLeaf(ALeaf: TPaneLeaf);
 
-    (* Утилиты обхода *)
     function FirstLeaf: TPaneLeaf;
     function LeafCount: Integer;
     procedure EnumerateLeaves(AProc: TProc<TPaneLeaf>);
@@ -166,8 +138,7 @@ end;
 
 destructor TPaneLeaf.Destroy;
 begin
-  (* Контент НЕ уничтожаем — им владеет PaneHost (через TComponent.Owner).
-     Здесь только разрываем ссылку. *)
+  (* Контент НЕ уничтожаем — им владеет PaneHost через TComponent.Owner. *)
   FContent := nil;
   inherited;
 end;
@@ -183,13 +154,12 @@ constructor TPaneSplit.Create(AOwnerTree: TPaneTree; AOrientation: TPaneOrientat
 begin
   inherited Create(AOwnerTree);
   FOrientation := AOrientation;
-  FChildren := TObjectList<TPaneNode>.Create(True);  (* OwnsObjects = True *)
+  FChildren := TObjectList<TPaneNode>.Create(True);
   FSizes := TList<Single>.Create;
 end;
 
 destructor TPaneSplit.Destroy;
 begin
-  (* FChildren.Free уничтожит всех оставшихся детей рекурсивно *)
   FSizes.Free;
   FChildren.Free;
   inherited;
@@ -231,7 +201,7 @@ begin
   else
     NewSize := ANormalizedSize;
 
-  (* Уменьшаем существующих пропорционально, чтобы освободить место *)
+  (* Освобождаем место — масштабируем существующие доли. *)
   if FChildren.Count > 0 then
   begin
     Scale := 1.0 - NewSize;
@@ -257,7 +227,7 @@ begin
   Released := FSizes[Idx];
   FSizes.Delete(Idx);
 
-  (* Не уничтожать удаляемого — за этим следит вызывающий *)
+  (* Не уничтожать удаляемого — за временем жизни следит вызывающий. *)
   FChildren.OwnsObjects := False;
   try
     FChildren.Delete(Idx);
@@ -283,7 +253,7 @@ begin
   if Idx < 0 then
     raise EDockingError.Create('TPaneSplit.ReplaceChild: old node not found');
 
-  (* Не уничтожать старого — за ним проследит вызывающий *)
+  (* Не уничтожать старого — за временем жизни следит вызывающий. *)
   FChildren.OwnsObjects := False;
   try
     FChildren[Idx] := ANew;
@@ -292,14 +262,14 @@ begin
   end;
   AOld.FParent := nil;
   ANew.FParent := Self;
-  (* Размер сохраняется — занимает то же место, что и старый *)
+  (* FSizes[Idx] сохраняется — новый узел занимает место старого. *)
 end;
 
 procedure TPaneSplit.SetSize(AIndex: Integer; AValue: Single);
 begin
   if (AIndex < 0) or (AIndex >= FSizes.Count) then
     raise EDockingError.Create('TPaneSplit.SetSize: index out of range');
-  if AValue < 0.05 then AValue := 0.05;   (* минимум 5%, чтобы pane не исчез *)
+  if AValue < 0.05 then AValue := 0.05;
   if AValue > 0.95 then AValue := 0.95;
   FSizes[AIndex] := AValue;
   NormalizeSizes;
@@ -321,7 +291,7 @@ begin
 
   if (Sum <= 0) and (FSizes.Count > 0) then
   begin
-    (* Защита от накопления ошибок: равные доли *)
+    (* Накопление floating-point ошибок съело сумму — раздаём равные доли. *)
     for I := 0 to FSizes.Count - 1 do
       FSizes[I] := 1.0 / FSizes.Count;
     Exit;
@@ -341,7 +311,7 @@ end;
 
 destructor TPaneTree.Destroy;
 begin
-  FRoot.Free;     (* рекурсивно — split.Free уничтожит детей *)
+  FRoot.Free;
   inherited;
 end;
 
@@ -401,7 +371,6 @@ begin
 
   if (ParentSplit <> nil) and (ParentSplit.Orientation = TargetOrient) then
   begin
-    (* Добавляем соседом в существующий split *)
     LeafIdx := ParentSplit.IndexOfChild(ALeaf);
     if InsertBefore then
       ParentSplit.InsertChild(LeafIdx, NewLeaf)
@@ -410,12 +379,11 @@ begin
   end
   else
   begin
-    (* Оборачиваем лист в новый split-узел *)
     WrappingSplit := TPaneSplit.Create(Self, TargetOrient);
 
     if ParentSplit = nil then
     begin
-      (* Лист был корнем — корнем становится новый split *)
+      (* ALeaf был корнем — корнем становится WrappingSplit. *)
       FRoot := WrappingSplit;
       ALeaf.FParent := nil;
     end
@@ -451,7 +419,6 @@ begin
 
   if ParentSplit = nil then
   begin
-    (* Закрываем последний лист — дерево опустеет *)
     if FRoot = ALeaf then
     begin
       FRoot := nil;
@@ -466,7 +433,6 @@ begin
   ParentSplit.RemoveChild(ALeaf);
   ALeaf.Free;
 
-  (* Если у родителя остался один ребёнок — схлопнуть split *)
   CollapseSingleChild(ParentSplit);
 
   DoChanged;
@@ -482,7 +448,7 @@ begin
 
   Survivor := ASplit.Children[0];
 
-  (* Изымаем survivor из ASplit без уничтожения *)
+  (* Survivor нужен живым после Free(ASplit) — отбираем его у OwnsObjects. *)
   ASplit.FChildren.OwnsObjects := False;
   try
     ASplit.FChildren.Delete(0);
@@ -494,7 +460,6 @@ begin
   GrandParent := ASplit.Parent;
   if GrandParent = nil then
   begin
-    (* Схлапываемый split был корнем *)
     FRoot := Survivor;
     Survivor.FParent := nil;
   end
@@ -503,7 +468,7 @@ begin
 
   ASplit.Free;
 
-  (* Каскад вверх — на случай редких аномалий *)
+  (* Каскад: схлопнутый split мог оставить деда с одним ребёнком. *)
   if (GrandParent <> nil) and (GrandParent.ChildCount = 1) then
     CollapseSingleChild(GrandParent);
 end;

@@ -1,29 +1,9 @@
 ﻿unit nbDocking.DropOverlay;
 
 (*
-  TDockingDropOverlay — визуальная подсказка "куда полетит drop"
-  для системы drag-drop табов в split-зоны панелей.
-
-  Что показывает:
-    Полупрозрачный синий прямоугольник, занимающий ровно ту половину
-    активного pane, в которую попадёт новый pane после drop.
-    Это VS Code-style preview — юзер сразу видит результат.
-
-  Определение направления:
-    Hit-test разбивает площадь pane на 4 краевые зоны (L/R/T/B)
-    как и раньше. Центр и углы — "нет зоны" (drop отменён).
-    Изменилось только отображение: вместо 4 видимых полос —
-    одна большая полупрозрачная половина.
-
-  Использование (для TabHost):
-    Overlay := TDockingDropOverlay.Create(SomeOwner);
-    Overlay.Parent := SomePaneHost;
-    ...
-    Overlay.ShowAt(PaneHost.ActiveLeafBounds);
-    Hit := Overlay.HitTestZone(MouseX, MouseY);
-    Overlay.Highlight(Hit);    // если HasZone=False, preview спрячется
-    ...
-    Overlay.HideOverlay;
+  VS Code-style drop preview: подсвечивает половину pane, в которую
+  поедет дроп. Hit-test использует четыре краевых "коридора" с долей
+  FZoneSizeFraction; центр и углы → NoZone (drop отменён).
 *)
 
 interface
@@ -34,7 +14,6 @@ uses
   nbDocking.Types;
 
 type
-  (* Результат hit-test *)
   TDropHitResult = record
     HasZone: Boolean;
     Direction: TSplitDirection;
@@ -42,8 +21,8 @@ type
 
   TDockingDropOverlay = class(TLayout)
   private
-    FPreview: TRectangle;             (* полупрозрачная половина-подсказка *)
-    FZoneSizeFraction: Single;        (* доля краевой зоны для hit-test *)
+    FPreview: TRectangle;
+    FZoneSizeFraction: Single;
     FPreviewColor: TAlphaColor;
     FCurrentHighlight: TDropHitResult;
     procedure BuildPreview;
@@ -51,16 +30,11 @@ type
   public
     constructor Create(AOwner: TComponent); override;
 
-    (* Показать оверлей на заданном прямоугольнике (в координатах Parent).
-       Прямоугольник обычно — TDockingPaneHost.ActiveLeafBounds. *)
     procedure ShowAt(const ABounds: TRectF);
     procedure HideOverlay;
 
-    (* Hit-test. Координаты в системе Parent оверлея.
-       Имя HitTestZone, не HitTest — иначе конфликт с TControl.HitTest:Boolean. *)
+    (* Имя HitTestZone — TControl.HitTest:Boolean занят. *)
     function HitTestZone(const AX, AY: Single): TDropHitResult;
-
-    (* Подсветить preview-половину. Если HasZone=False — спрятать preview. *)
     procedure Highlight(const AHit: TDropHitResult);
 
     property ZoneSizeFraction: Single read FZoneSizeFraction
@@ -68,7 +42,6 @@ type
     property PreviewColor: TAlphaColor read FPreviewColor write FPreviewColor;
   end;
 
-(* Утилиты *)
 function NoZone: TDropHitResult; inline;
 function Zone(ADir: TSplitDirection): TDropHitResult; inline;
 
@@ -91,10 +64,11 @@ end;
 constructor TDockingDropOverlay.Create(AOwner: TComponent);
 begin
   inherited;
-  HitTest := False;        (* оверлей мышь не ловит, ловит TabHost *)
+  (* Мышь ловит TabHost, который и решает, когда оверлей показывать. *)
+  HitTest := False;
   Visible := False;
   FZoneSizeFraction := 0.25;
-  FPreviewColor := TAlphaColor($60_3D_6F_B5);   (* полупрозрачный синий *)
+  FPreviewColor := TAlphaColor($60_3D_6F_B5);
   FCurrentHighlight := NoZone;
   BuildPreview;
 end;
@@ -107,7 +81,6 @@ begin
   FPreview.Fill.Color := FPreviewColor;
   FPreview.HitTest := False;
   FPreview.Visible := False;
-  (* Position/Size выставляются в ApplyPreview под текущее направление *)
 end;
 
 procedure TDockingDropOverlay.ShowAt(const ABounds: TRectF);
@@ -117,7 +90,6 @@ begin
   Width := ABounds.Width;
   Height := ABounds.Height;
 
-  (* preview скрыт до первого Highlight *)
   FPreview.Visible := False;
   FCurrentHighlight := NoZone;
 
@@ -149,8 +121,7 @@ begin
   ZoneW := W * FZoneSizeFraction;
   ZoneH := H * FZoneSizeFraction;
 
-  (* Краевые "коридоры" — без углов и без центра.
-     Зона активна, только если курсор в нужной полосе И НЕ в углу. *)
+  (* Краевые коридоры: в углах и в центре зона неактивна. *)
   if (LocalX < ZoneW) and (LocalY >= ZoneH) and (LocalY <= H - ZoneH) then
     Exit(Zone(sdLeft));
   if (LocalX > W - ZoneW) and (LocalY >= ZoneH) and (LocalY <= H - ZoneH) then
@@ -182,7 +153,6 @@ begin
   HalfW := Width / 2;
   HalfH := Height / 2;
 
-  (* Preview занимает ту половину overlay-а, куда поедет новый pane *)
   case AHit.Direction of
     sdLeft:
       begin
