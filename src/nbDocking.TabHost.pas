@@ -36,7 +36,7 @@ interface
 
 uses
   System.Classes, System.SysUtils, System.UITypes, System.Types,
-  System.Generics.Collections,
+  System.Generics.Collections, System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Edit,
   FMX.Objects, FMX.Graphics, FMX.TextLayout,
   nbDocking.Types, nbDocking.PaneTree, nbDocking.PaneHost,
@@ -51,6 +51,8 @@ const
   TAB_ADD_BUTTON_WIDTH        = 32;
   TAB_DRAG_THRESHOLD          = 5;
   TAB_DROP_INDICATOR_WIDTH    = 2;
+  TAB_TEXT_AVG_CHAR_WIDTH     = 7.5;
+  TAB_GROUP_CAPTION           = 'Group';
 
 type
   TDockingTabHost = class;
@@ -65,6 +67,7 @@ type
     FPaneHost: TDockingPaneHost;
     FOwner: TDockingTabHost;
     FButton: TTabButton;
+    FCustomGroupCaption: Boolean;
     procedure SetCaption(const AValue: string);
     procedure SetDirty(AValue: Boolean);
   public
@@ -76,6 +79,8 @@ type
     property Dirty: Boolean read FDirty write SetDirty;
     property PaneHost: TDockingPaneHost read FPaneHost;
     property Owner: TDockingTabHost read FOwner;
+    property CustomGroupCaption: Boolean read FCustomGroupCaption
+      write FCustomGroupCaption;
 
     (* True если в табе ровно один pane (не группа).
        Только такие табы можно перетаскивать в split-зону. *)
@@ -111,6 +116,7 @@ type
     procedure CommitRename;
     procedure CancelRename;
     function DesiredWidth: Single;
+    procedure UpdateChildLayout;
     procedure HandleDblClick(Sender: TObject);
     procedure HandleMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -119,6 +125,7 @@ type
       Shift: TShiftState; X, Y: Single);
     procedure HandleCloseMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleResize(Sender: TObject);
     procedure HandleEditExit(Sender: TObject);
     procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
       var KeyChar: Char; Shift: TShiftState);
@@ -187,6 +194,11 @@ type
     function FindTabByPaneHost(APaneHost: TDockingPaneHost): TDockingTab;
     function IndexOfTab(ATab: TDockingTab): Integer;
     function CanCloseTabInternal(ATab: TDockingTab): Boolean;
+    function CaptionForContent(AContent: TDockingPaneContent;
+      const AFallback: string): string;
+    procedure EnsureContentCaption(AContent: TDockingPaneContent;
+      const AFallback: string);
+    procedure SyncTabCaptions;
     procedure ScheduleDeferredCloseTab(ATab: TDockingTab);
 
     procedure TabButton_Activate(ATab: TDockingTab);
@@ -268,6 +280,7 @@ begin
   FOwner := AOwner;
   FCaption := ACaption;
   FDirty := False;
+  FCustomGroupCaption := False;
   FPaneHost := TDockingPaneHost.Create(AOwner);
   FPaneHost.Parent := AOwner.FContentArea;
   FPaneHost.Align := TAlignLayout.Client;
@@ -322,6 +335,7 @@ begin
   FTab := ATab;
   FDragState := dsIdle;
   HitTest := True;
+  ClipChildren := True;
   Align := TAlignLayout.Left;
   Width := TAB_BUTTON_MIN_WIDTH;
   Margins.Rect := RectF(0, 4, 0, 0);
@@ -333,9 +347,7 @@ begin
 
   FCaptionLabel := TLabel.Create(Self);
   FCaptionLabel.Parent := Self;
-  FCaptionLabel.Align := TAlignLayout.Client;
-  FCaptionLabel.Margins.Rect := RectF(TAB_BUTTON_PADDING, 0,
-    TAB_BUTTON_CLOSE_SIZE + TAB_BUTTON_PADDING, 0);
+  FCaptionLabel.Align := TAlignLayout.None;
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
   FCaptionLabel.TextSettings.VertAlign := TTextAlign.Center;
   FCaptionLabel.TextSettings.Font.Size := 13;
@@ -344,9 +356,7 @@ begin
 
   FCaptionEdit := TEdit.Create(Self);
   FCaptionEdit.Parent := Self;
-  FCaptionEdit.Align := TAlignLayout.Client;
-  FCaptionEdit.Margins.Rect := RectF(TAB_BUTTON_PADDING, 4,
-    TAB_BUTTON_CLOSE_SIZE + TAB_BUTTON_PADDING, 4);
+  FCaptionEdit.Align := TAlignLayout.None;
   FCaptionEdit.Visible := False;
   FCaptionEdit.OnExit := HandleEditExit;
   FCaptionEdit.OnKeyDown := HandleEditKeyDown;
@@ -355,9 +365,8 @@ begin
      Помечает таб как "группу" — drag в split-зону для таких отключён. *)
   FGroupGlyph := TText.Create(Self);
   FGroupGlyph.Parent := Self;
-  FGroupGlyph.Align := TAlignLayout.Left;
+  FGroupGlyph.Align := TAlignLayout.None;
   FGroupGlyph.Width := 0;
-  FGroupGlyph.Margins.Rect := RectF(0, 0, 0, 0);
   FGroupGlyph.Text := '▦';
   FGroupGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FGroupGlyph.TextSettings.VertAlign := TTextAlign.Center;
@@ -367,9 +376,8 @@ begin
 
   FCloseBtn := TRectangle.Create(Self);
   FCloseBtn.Parent := Self;
-  FCloseBtn.Align := TAlignLayout.Right;
+  FCloseBtn.Align := TAlignLayout.None;
   FCloseBtn.Width := TAB_BUTTON_CLOSE_SIZE;
-  FCloseBtn.Margins.Rect := RectF(0, 7, TAB_BUTTON_PADDING, 7);
   FCloseBtn.Fill.Kind := TBrushKind.None;
   FCloseBtn.Stroke.Kind := TBrushKind.None;
   FCloseBtn.XRadius := 3;
@@ -390,8 +398,10 @@ begin
   OnMouseMove := HandleMouseMove;
   OnMouseUp := HandleMouseUp;
   OnDblClick := HandleDblClick;
+  OnResize := HandleResize;
 
   UpdateCaption;
+  UpdateChildLayout;
 end;
 
 procedure TTabButton.BeginRename;
@@ -407,6 +417,7 @@ begin
     FGroupGlyph.Visible := False;
   FCaptionEdit.Text := FTab.Caption;
   FCaptionEdit.Visible := True;
+  UpdateChildLayout;
   FCaptionEdit.SetFocus;
   FCaptionEdit.SelectAll;
 end;
@@ -422,6 +433,7 @@ begin
   NewCaption := Trim(FCaptionEdit.Text);
   FCaptionEdit.Visible := False;
   FCaptionLabel.Visible := True;
+  UpdateChildLayout;
 
   if (FTab <> nil) and (NewCaption <> '') then
   begin
@@ -431,6 +443,8 @@ begin
       if Content <> nil then
         Content.Caption := NewCaption;
     end;
+    if not FTab.IsSingle then
+      FTab.CustomGroupCaption := True;
     FTab.Caption := NewCaption;
   end
   else
@@ -444,6 +458,7 @@ begin
   FCaptionEdit.Visible := False;
   FCaptionLabel.Visible := True;
   UpdateCaption;
+  UpdateChildLayout;
 end;
 
 procedure TTabButton.HandleDblClick(Sender: TObject);
@@ -455,7 +470,7 @@ function TTabButton.DesiredWidth: Single;
 var
   S: string;
   TextLayout: TTextLayout;
-  TextWidth: Single;
+  TextWidth, FallbackTextWidth: Single;
 begin
   if FTab = nil then Exit(TAB_BUTTON_MIN_WIDTH);
 
@@ -481,6 +496,10 @@ begin
     TextLayout.Free;
   end;
 
+  FallbackTextWidth := Length(S) * TAB_TEXT_AVG_CHAR_WIDTH;
+  if TextWidth < FallbackTextWidth then
+    TextWidth := FallbackTextWidth;
+
   Result := TAB_BUTTON_PADDING * 2
     + TAB_BUTTON_CLOSE_SIZE
     + TAB_BUTTON_PADDING
@@ -491,6 +510,65 @@ begin
 
   if Result < TAB_BUTTON_MIN_WIDTH then
     Result := TAB_BUTTON_MIN_WIDTH;
+  Result := Ceil(Result);
+end;
+
+procedure TTabButton.UpdateChildLayout;
+var
+  LLeft, LRight, LTextWidth, LEditHeight, LCloseHeight: Single;
+begin
+  LLeft := TAB_BUTTON_PADDING;
+
+  if (FGroupGlyph <> nil) and FGroupGlyph.Visible then
+  begin
+    FGroupGlyph.Position.X := LLeft;
+    FGroupGlyph.Position.Y := 0;
+    FGroupGlyph.Width := TAB_BUTTON_GROUP_GLYPH_WIDTH;
+    FGroupGlyph.Height := Height;
+    LLeft := LLeft + TAB_BUTTON_GROUP_GLYPH_WIDTH + TAB_BUTTON_PADDING;
+  end
+  else if FGroupGlyph <> nil then
+  begin
+    FGroupGlyph.Width := 0;
+    FGroupGlyph.Height := Height;
+  end;
+
+  if FCloseBtn <> nil then
+  begin
+    LCloseHeight := Height - 14;
+    if LCloseHeight < 0 then
+      LCloseHeight := 0;
+    FCloseBtn.Position.X := Width - TAB_BUTTON_PADDING - TAB_BUTTON_CLOSE_SIZE;
+    FCloseBtn.Position.Y := 7;
+    FCloseBtn.Width := TAB_BUTTON_CLOSE_SIZE;
+    FCloseBtn.Height := LCloseHeight;
+    LRight := FCloseBtn.Position.X - TAB_BUTTON_PADDING;
+  end
+  else
+    LRight := Width - TAB_BUTTON_PADDING;
+
+  LTextWidth := LRight - LLeft;
+  if LTextWidth < 0 then
+    LTextWidth := 0;
+
+  if FCaptionLabel <> nil then
+  begin
+    FCaptionLabel.Position.X := LLeft;
+    FCaptionLabel.Position.Y := 0;
+    FCaptionLabel.Width := LTextWidth;
+    FCaptionLabel.Height := Height;
+  end;
+
+  if FCaptionEdit <> nil then
+  begin
+    LEditHeight := Height - 8;
+    if LEditHeight < 0 then
+      LEditHeight := 0;
+    FCaptionEdit.Position.X := LLeft;
+    FCaptionEdit.Position.Y := 4;
+    FCaptionEdit.Width := LTextWidth;
+    FCaptionEdit.Height := LEditHeight;
+  end;
 end;
 
 procedure TTabButton.UpdateCaption;
@@ -513,14 +591,13 @@ begin
     if IsGroup then
     begin
       FGroupGlyph.Width := TAB_BUTTON_GROUP_GLYPH_WIDTH;
-      FGroupGlyph.Margins.Rect := RectF(TAB_BUTTON_PADDING, 0, 0, 0);
     end
     else
     begin
       FGroupGlyph.Width := 0;
-      FGroupGlyph.Margins.Rect := RectF(0, 0, 0, 0);
     end;
   end;
+  UpdateChildLayout;
 end;
 
 procedure TTabButton.UpdateVisual(AIsActive: Boolean);
@@ -668,6 +745,11 @@ begin
   FTab.Owner.TabButton_RequestClose(FTab);
 end;
 
+procedure TTabButton.HandleResize(Sender: TObject);
+begin
+  UpdateChildLayout;
+end;
+
 procedure TTabButton.HandleEditExit(Sender: TObject);
 begin
   CommitRename;
@@ -751,6 +833,7 @@ begin
   FTabBar.Align := TAlignLayout.Top;
   FTabBar.Height := TAB_BAR_HEIGHT;
   FTabBar.HitTest := True;
+  FTabBar.ClipChildren := True;
   FTabBar.OnResize := HandleTabBarResize;
 
   FTabBarBg := TRectangle.Create(Self);
@@ -807,7 +890,7 @@ procedure TDockingTabHost.HandleAddButtonClick(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
   if Button <> TMouseButton.mbLeft then Exit;
-  AddTab('New tab');
+  AddTab('New tab ' + (FTabs.Count + 1).ToString);
 end;
 
 (* === Очередь отложенных закрытий === *)
@@ -854,16 +937,21 @@ begin
 
   Btn := TTabButton.Create(Self, NewTab);
   NewTab.FButton := Btn;
+  Btn.Align := TAlignLayout.Right;
   Btn.Parent := FTabBar;
+  Btn.Align := TAlignLayout.Left;
 
   InitialContent := nil;
   if Assigned(FOnContentNeeded) then
     FOnContentNeeded(Self, InitialContent);
   if InitialContent <> nil then
+  begin
+    EnsureContentCaption(InitialContent, NewTab.Caption);
     NewTab.PaneHost.SetInitialContent(InitialContent);
+  end;
 
   (* Обновить caption — IsSingle теперь True (LeafCount=1), glyph ▦ скроется. *)
-  Btn.UpdateCaption;
+  SyncTabCaptions;
   UpdateTabButtonWidths;
 
   InternalActivateTab(NewTab);
@@ -885,12 +973,18 @@ begin
 
   Btn := TTabButton.Create(Self, NewTab);
   NewTab.FButton := Btn;
+  Btn.Align := TAlignLayout.Right;
   Btn.Parent := FTabBar;
+  Btn.Align := TAlignLayout.Left;
 
   if AContent <> nil then
+  begin
+    NewTab.Caption := CaptionForContent(AContent, ACaption);
+    EnsureContentCaption(AContent, NewTab.Caption);
     NewTab.PaneHost.SetInitialContent(AContent);
+  end;
 
-  Btn.UpdateCaption;
+  SyncTabCaptions;
   UpdateTabButtonWidths;
   InternalActivateTab(NewTab);
 
@@ -944,7 +1038,7 @@ begin
     FActiveTab := nil;
 
   FTabs.Remove(ATab);
-  UpdateTabButtonWidths;
+  SyncTabCaptions;
 
   InternalActivateTab(NextActive);
 
@@ -973,6 +1067,7 @@ begin
   finally
     FTabs.OwnsObjects := True;
   end;
+  SyncTabCaptions;
   RelayoutTabButtons;
 end;
 
@@ -1045,6 +1140,13 @@ begin
     Buffer.Free;
   end;
 
+  if FTabBarBg <> nil then
+    FTabBarBg.SendToBack;
+  if FAddButton <> nil then
+    FAddButton.BringToFront;
+  if (FDropIndicator <> nil) and FDropIndicator.Visible then
+    FDropIndicator.BringToFront;
+
   UpdateTabButtonWidths;
 end;
 
@@ -1063,16 +1165,13 @@ begin
   for I := 0 to FTabs.Count - 1 do
   begin
     Btn := FTabs[I].FButton;
-    if Btn <> nil then
+    if (Btn <> nil) and (Btn.Parent = FTabBar) then
     begin
       Widths[I] := Btn.DesiredWidth;
       DesiredTotal := DesiredTotal + Widths[I] + Btn.Margins.Left + Btn.Margins.Right;
     end
     else
-    begin
-      Widths[I] := TAB_BUTTON_MIN_WIDTH;
-      DesiredTotal := DesiredTotal + Widths[I];
-    end;
+      Widths[I] := 0;
   end;
   if DesiredTotal <= 0 then Exit;
 
@@ -1084,8 +1183,11 @@ begin
     for I := 0 to FTabs.Count - 1 do
     begin
       Btn := FTabs[I].FButton;
-      if Btn <> nil then
-        Btn.Width := Widths[I];
+      if (Btn <> nil) and (Btn.Parent = FTabBar) then
+      begin
+        Btn.Width := Ceil(Widths[I]);
+        Btn.UpdateChildLayout;
+      end;
     end;
     Exit;
   end;
@@ -1112,9 +1214,10 @@ begin
   for I := 0 to FTabs.Count - 1 do
   begin
     Btn := FTabs[I].FButton;
-    if Btn = nil then Continue;
+    if (Btn = nil) or (Btn.Parent <> FTabBar) then Continue;
 
-    Btn.Width := Widths[I];
+    Btn.Width := Ceil(Widths[I]);
+    Btn.UpdateChildLayout;
   end;
 end;
 
@@ -1137,6 +1240,66 @@ begin
   for I := 0 to FTabs.Count - 1 do
     if FTabs[I] = ATab then
       Exit(I);
+end;
+
+function TDockingTabHost.CaptionForContent(AContent: TDockingPaneContent;
+  const AFallback: string): string;
+begin
+  Result := '';
+  if AContent <> nil then
+    Result := Trim(AContent.Caption);
+  if Result = '' then
+    Result := Trim(AFallback);
+  if Result = '' then
+    Result := 'New tab';
+end;
+
+procedure TDockingTabHost.EnsureContentCaption(AContent: TDockingPaneContent;
+  const AFallback: string);
+begin
+  if AContent = nil then Exit;
+  if Trim(AContent.Caption) = '' then
+    AContent.Caption := CaptionForContent(AContent, AFallback);
+end;
+
+procedure TDockingTabHost.SyncTabCaptions;
+var
+  I, GroupCount, GroupIdx: Integer;
+  Tab: TDockingTab;
+  Content: TDockingPaneContent;
+begin
+  GroupCount := 0;
+  for I := 0 to FTabs.Count - 1 do
+    if not FTabs[I].IsSingle then
+      Inc(GroupCount);
+
+  GroupIdx := 0;
+  for I := 0 to FTabs.Count - 1 do
+  begin
+    Tab := FTabs[I];
+    if Tab = nil then Continue;
+
+    if Tab.IsSingle then
+    begin
+      Tab.CustomGroupCaption := False;
+      if Tab.PaneHost = nil then Continue;
+      Content := Tab.PaneHost.ActiveLeafContent;
+      if Content = nil then Continue;
+
+      EnsureContentCaption(Content, Tab.Caption);
+      Tab.Caption := CaptionForContent(Content, Tab.Caption);
+    end
+    else
+    begin
+      Inc(GroupIdx);
+      if Tab.CustomGroupCaption then Continue;
+
+      if GroupCount > 1 then
+        Tab.Caption := TAB_GROUP_CAPTION + ' ' + GroupIdx.ToString
+      else
+        Tab.Caption := TAB_GROUP_CAPTION;
+    end;
+  end;
 end;
 
 function TDockingTabHost.CanCloseTabInternal(ATab: TDockingTab): Boolean;
@@ -1168,6 +1331,7 @@ begin
 
   (* Обновить glyph таба — IsSingle мог измениться после split/close *)
   Tab := FindTabByPaneHost(Host);
+  SyncTabCaptions;
   if (Tab <> nil) and (Tab.FButton <> nil) then
   begin
     Tab.FButton.UpdateCaption;
@@ -1194,7 +1358,7 @@ begin
 
   if Tab.IsSingle and (Host.ActiveLeafContent = AContent)
      and (AContent.Caption <> '') then
-    Tab.Caption := AContent.Caption
+    SyncTabCaptions
   else if Tab.FButton <> nil then
   begin
     Tab.FButton.UpdateCaption;
@@ -1204,9 +1368,25 @@ end;
 
 procedure TDockingTabHost.HandlePaneHostContentNeeded(Sender: TObject;
   var AContent: TDockingPaneContent);
+var
+  Host: TDockingPaneHost;
+  Tab: TDockingTab;
 begin
   if Assigned(FOnContentNeeded) then
     FOnContentNeeded(Self, AContent);
+  if AContent = nil then Exit;
+
+  if Sender is TDockingPaneHost then
+  begin
+    Host := TDockingPaneHost(Sender);
+    Tab := FindTabByPaneHost(Host);
+    if Tab <> nil then
+      EnsureContentCaption(AContent, Tab.Caption)
+    else
+      EnsureContentCaption(AContent, 'New tab');
+  end
+  else
+    EnsureContentCaption(AContent, 'New tab');
 end;
 
 (* === API для TTabButton === *)
@@ -1499,6 +1679,7 @@ begin
   (* Перенос: забрать контент из source и вложить в split target *)
   Content := ASourceTab.PaneHost.TakeActiveContent;
   if Content = nil then Exit;
+  EnsureContentCaption(Content, ASourceTab.Caption);
   ATargetTab.PaneHost.SplitActive(ADir, Content);
 end;
 
@@ -1611,7 +1792,7 @@ procedure TDockingTabHost.PaneHeader_End(const AScreenPt: TPointF);
 var
   HostPt, PaneLocalPt: TPointF;
   IsOverTabBar: Boolean;
-  TargetTab: TDockingTab;
+  TargetTab, SourceTab: TDockingTab;
   TargetLeaf: TPaneLeaf;
   Hit: TDropHitResult;
   Content: TDockingPaneContent;
@@ -1656,12 +1837,17 @@ begin
   (* Drop на TabBar — новый таб с содержимым source. *)
   if IsOverTabBar then
   begin
-    Caption := 'Tab';
-    if SourceLeaf.Content <> nil then
-      Caption := SourceLeaf.Content.Caption;
+    Caption := 'New tab';
+    SourceTab := FindTabByPaneHost(SourceHost);
+    if SourceTab <> nil then
+      Caption := SourceTab.Caption;
+    Caption := CaptionForContent(SourceLeaf.Content, Caption);
     Content := SourceHost.TakeLeafContent(SourceLeaf);
     if Content <> nil then
+    begin
+      EnsureContentCaption(Content, Caption);
       AddTabWithContent(Caption, Content);
+    end;
     Exit;
   end;
 
@@ -1672,6 +1858,11 @@ begin
 
   Content := SourceHost.TakeLeafContent(SourceLeaf);
   if Content = nil then Exit;
+  SourceTab := FindTabByPaneHost(SourceHost);
+  if SourceTab <> nil then
+    EnsureContentCaption(Content, SourceTab.Caption)
+  else
+    EnsureContentCaption(Content, 'New tab');
 
   (* После TakeLeafContent дерево source могло перестроиться,
      но target leaf жив (мы трогали только source). Активируем
