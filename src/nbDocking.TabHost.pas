@@ -1,35 +1,10 @@
 ﻿unit nbDocking.TabHost;
 
 (*
-  TDockingTabHost — контейнер нескольких TDockingPaneHost-ов как табов.
-
-  Структура:
-    Сверху — TabBar с TabButton-ами (по табу на кнопку) и "+" в конце.
-    Снизу — ContentArea, в которой по очереди показываются PaneHost-ы.
-    Видим только один PaneHost (активного таба), остальные Visible=False
-    (но живут в памяти — терминалы не теряются при переключении).
-
-  Что делает TabHost:
-    - AddTab/CloseTab/ActivateTab
-    - Запрашивает контент для нового pane через единый OnContentNeeded
-      (forward к каждому внутреннему PaneHost)
-    - Подписан на OnActiveLeafChanged каждого PaneHost-а:
-      если PaneHost опустошился — таб закрывается (Termius-style)
-    - Drag-drop reorder табов в полосе
-
-  Отложенное закрытие таба через TTimer:
-    Когда PaneHost внутри таба опустошается, мы внутри его стека вызова.
-    Закрывать таб (а значит, уничтожать PaneHost) прямо здесь — AV.
-    Используем TTimer с Interval=1 и список FPendingCloseTabs:
-    обработчик таймера снимет все накопленные закрытия в следующий tick.
-
-  Что НЕ делает (отложено):
-    - Перетаскивание таба ВНЕ полосы (detach в floating-окно) — итерация 4
-    - Перетаскивание таба МЕЖДУ TabHost-ами — итерация 4+
-    - Скроллинг TabBar если табы не помещаются — сейчас просто срежется
-
-  Декаплинг:
-    TDockingTab — POCO-модель (Caption, Glyph, Dirty, ссылка на PaneHost).
+  Инвариант: закрытие таба, инициированное изнутри его же стека вызова
+  (опустошение PaneHost через OnActiveLeafChanged, клик по ✕ внутри таба),
+  откладывается на следующий tick через FDeferTimer/FPendingCloseTabs.
+  Синхронный Free уничтожит объект, в котором мы сейчас находимся, → AV.
 *)
 
 interface
@@ -61,7 +36,7 @@ type
   TDockingTabHost = class;
   TTabButton = class;
 
-  (* Модель таба. Лёгкий класс, не TComponent — TabHost управляет временем жизни. *)
+  (* Не TComponent — временем жизни управляет TObjectList FTabs у TabHost. *)
   TDockingTab = class
   private
     FCaption: string;
@@ -85,8 +60,7 @@ type
     property CustomGroupCaption: Boolean read FCustomGroupCaption
       write FCustomGroupCaption;
 
-    (* True если в табе ровно один pane (не группа).
-       Только такие табы можно перетаскивать в split-зону. *)
+    (* Группы (LeafCount > 1) запрещено перетаскивать в split-зону. *)
     function IsSingle: Boolean;
   end;
 
@@ -98,9 +72,9 @@ type
 
   TTabDragState = (
     dsIdle,
-    dsArmed,            (* MouseDown, ждём 5px смещения *)
-    dsDragging,         (* курсор внутри TabBar — режим reorder *)
-    dsDraggingToPane    (* курсор вышел за TabBar — режим drop-в-split *)
+    dsArmed,            (* MouseDown, ждём TAB_DRAG_THRESHOLD смещения *)
+    dsDragging,         (* курсор в TabBar — reorder *)
+    dsDraggingToPane    (* курсор вне TabBar — drop в split *)
   );
 
   TTabButton = class(TRectangle)
@@ -155,22 +129,18 @@ type
     FDropIndicator: TRectangle;
     FContentArea: TLayout;
 
-    (* Очередь отложенных закрытий + таймер *)
     FPendingCloseTabs: TList<TDockingTab>;
     FDeferTimer: TTimer;
 
-    (* Drag-drop: оверлей с 4 drop-зонами поверх активного pane *)
     FDropOverlay: TDockingDropOverlay;
-    FCurrentDropTarget: TDockingTab;     (* куда сейчас наведено *)
-    FCurrentDropLeaf: TPaneLeaf;         (* конкретный leaf под курсором *)
+    FCurrentDropTarget: TDockingTab;
+    FCurrentDropLeaf: TPaneLeaf;
 
-    (* Drag header pane-а. Источник = leaf чужого PaneHost-а внутри одного из табов.
-       Цель определяется по курсору: TabBar → новый таб, площадь pane-а → split. *)
+    (* Drag заголовка pane: TabBar → новый таб, площадь pane → split. *)
     FHeaderDragSourceHost: TDockingPaneHost;
     FHeaderDragSourceLeaf: TPaneLeaf;
     FHeaderDragOverTabBar: Boolean;
 
-    (* Стилевые свойства *)
     FTabBarColor: TAlphaColor;
     FTabActiveColor: TAlphaColor;
     FTabInactiveColor: TAlphaColor;
@@ -221,7 +191,6 @@ type
     function FindDropTargetIndex(ATabBarLocalX: Single;
       AExcludeTab: TDockingTab): Integer;
 
-    (* Drag-drop в split-зону *)
     procedure TabButton_EnterPaneDrag(AButton: TTabButton);
     procedure TabButton_LeavePaneDrag(AButton: TTabButton);
     procedure TabButton_UpdatePaneDrag(AButton: TTabButton;
@@ -233,7 +202,6 @@ type
     procedure PerformDockMove(ASourceTab, ATargetTab: TDockingTab;
       ADir: TSplitDirection);
 
-    (* === Drag header pane-а === *)
     procedure HandlePaneHostHeaderDrag(ASender: TDockingPaneHost;
       ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
     procedure PaneHeader_Begin(ASourceHost: TDockingPaneHost;
@@ -248,8 +216,7 @@ type
 
     function AddTab(const ACaption: string = 'New tab'): TDockingTab;
 
-    (* Создаёт таб с уже готовым контентом (например, перенесённым из другого
-       таба при drag-drop). НЕ зовёт OnContentNeeded. *)
+    (* В отличие от AddTab — OnContentNeeded не вызывается. *)
     function AddTabWithContent(const ACaption: string;
       AContent: TDockingPaneContent): TDockingTab;
 
@@ -371,8 +338,7 @@ begin
   FCaptionEdit.OnExit := HandleEditExit;
   FCaptionEdit.OnKeyDown := HandleEditKeyDown;
 
-  (* Group glyph слева от caption, показывается только для не-single табов.
-     Помечает таб как "группу" — drag в split-зону для таких отключён. *)
+  (* Glyph ▦ обозначает группу — drag в split-зону для таких табов отключён. *)
   FGroupGlyph := TText.Create(Self);
   FGroupGlyph.Parent := Self;
   FGroupGlyph.Align := TAlignLayout.None;
@@ -640,12 +606,8 @@ begin
   if FTab = nil then Exit;
   if FEditingCaption then Exit;
 
-  (* НЕ активируем таб здесь!
-     Если активировать на MouseDown, при попытке перетащить НЕ-активный таб
-     он сразу становится активным, и dock-логика трактует его как drop-в-себя.
-     Активацию откладываем до MouseUp: если drag не случился — кликом
-     активируем; если случился (reorder/drop) — активация не нужна. *)
-
+  (* Активация отложена до MouseUp: иначе drag не-активного таба сразу
+     делает его активным, и drop-логика трактует это как drop-в-себя. *)
   FDragState := dsArmed;
   FDragStartX := X;
   FDragStartY := Y;
@@ -728,8 +690,6 @@ begin
   case PrevState of
     dsDragging:
       begin
-        (* Reorder в TabBar — активируем перетащенный таб,
-           чтобы юзер продолжил работать с ним. *)
         ScreenPt := LocalToScreen(PointF(X, Y));
         Host.TabButton_EndDrag(Self, ScreenPt.X, True);
         Host.TabButton_Activate(FTab);
@@ -737,18 +697,13 @@ begin
       end;
     dsDraggingToPane:
       begin
-        (* Drop в split-зону *)
         ScreenPt := LocalToScreen(PointF(X, Y));
         Host.TabButton_DropOnPane(Self, ScreenPt);
         Opacity := 1.0;
       end;
     dsArmed:
-      begin
-        (* Чистый клик без drag — активируем таб сейчас.
-           На MouseDown активацию пропустили, чтобы не блокировать
-           возможный drag (см. комментарий в HandleMouseDown). *)
-        Host.TabButton_Activate(FTab);
-      end;
+      (* Чистый клик — активация, отложенная из MouseDown. *)
+      Host.TabButton_Activate(FTab);
   end;
 end;
 
@@ -834,13 +789,10 @@ begin
 
   BuildUI;
 
-  (* Drop-overlay создаётся один на TabHost. Перепаривается на активный
-     PaneHost при заходе в режим dsDraggingToPane. *)
   FDropOverlay := TDockingDropOverlay.Create(Self);
   FCurrentDropTarget := nil;
   FCurrentDropLeaf := nil;
 
-  (* Таймер отложенного закрытия табов. *)
   FDeferTimer := TTimer.Create(Self);
   FDeferTimer.Enabled := False;
   FDeferTimer.Interval := 1;
@@ -857,20 +809,15 @@ begin
     FPendingCloseTabs.Free;
   end;
   FTabs.Free;
-  (* FDeferTimer и FTabBar/FAddButton/etc — Owner=Self, FMX освободит. *)
+  (* Остальные поля имеют Owner = Self и освободятся каскадом. *)
   inherited;
 end;
 
 procedure TDockingTabHost.BuildUI;
 begin
-  (* FTabBar — TLayout, а не TRectangle.
-     Причина: TRectangle как родитель Align=Left детей в FMX ведёт себя
-     странно — новые дети вставляются на индекс 1, а не в конец.
-     В чистом TLayout порядок Children корректный.
-     Цветной фон рисуется отдельным TRectangle, лежащим внутри FTabBar
-     с Align=Contents (заполняет всё пространство), HitTest=False
-     (не перехватывает клики), и помещается ПЕРЕД остальными детьми
-     (нижний слой Z-order, чтобы кнопки рисовались поверх). *)
+  (* FTabBar — TLayout, а не TRectangle: у TRectangle родителя дети с
+     Align=Left вставляются не в конец, а на индекс 1. Цветной фон —
+     отдельный FTabBarBg с Align=Contents, в самом низу Z-order. *)
   FTabBar := TLayout.Create(Self);
   FTabBar.Parent := Self;
   FTabBar.Align := TAlignLayout.Top;
@@ -951,8 +898,6 @@ begin
   FAddButton.Fill.Kind := TBrushKind.None;
 end;
 
-(* === Очередь отложенных закрытий === *)
-
 procedure TDockingTabHost.ScheduleDeferredCloseTab(ATab: TDockingTab);
 begin
   if ATab = nil then Exit;
@@ -968,11 +913,8 @@ var
 begin
   FDeferTimer.Enabled := False;
 
-  (* Снимаем все накопленные закрытия в порядке поступления.
-     CloseTab может породить ещё одно закрытие через OnActiveLeafChanged
-     соседнего PaneHost-а — оно добавится в FPendingCloseTabs и таймер
-     снова взведётся. Но в текущей итерации проходим только то, что
-     было на старте. *)
+  (* CloseTab может через OnActiveLeafChanged породить новое закрытие —
+     оно довзведёт таймер; здесь обрабатываем только накопленное. *)
   while FPendingCloseTabs.Count > 0 do
   begin
     Tab := FPendingCloseTabs[0];
@@ -981,8 +923,6 @@ begin
       CloseTab(Tab);
   end;
 end;
-
-(* === High-level API === *)
 
 function TDockingTabHost.AddTab(const ACaption: string): TDockingTab;
 var
@@ -995,9 +935,8 @@ begin
 
   Btn := TTabButton.Create(Self, NewTab);
   NewTab.FButton := Btn;
-  (* FMX-хак: при Parent := FTabBar c уже выставленным Align=Left
-     кнопка может вставиться не в конец Children. Временный Right
-     вынуждает добавление в конец, после чего возвращаем Left. *)
+  (* FMX-хак: при Parent := FTabBar с Align=Left кнопка попадает не в
+     конец Children. Временный Right гарантирует добавление в конец. *)
   Btn.Align := TAlignLayout.Right;
   Btn.Parent := FTabBar;
   Btn.Align := TAlignLayout.Left;
@@ -1011,7 +950,6 @@ begin
     NewTab.PaneHost.SetInitialContent(InitialContent);
   end;
 
-  (* Обновить caption — IsSingle теперь True (LeafCount=1), glyph ▦ скроется. *)
   SyncTabCaptions;
   UpdateTabButtonWidths;
 
@@ -1034,9 +972,8 @@ begin
 
   Btn := TTabButton.Create(Self, NewTab);
   NewTab.FButton := Btn;
-  (* FMX-хак: при Parent := FTabBar c уже выставленным Align=Left
-     кнопка может вставиться не в конец Children. Временный Right
-     вынуждает добавление в конец, после чего возвращаем Left. *)
+  (* FMX-хак: при Parent := FTabBar с Align=Left кнопка попадает не в
+     конец Children. Временный Right гарантирует добавление в конец. *)
   Btn.Align := TAlignLayout.Right;
   Btn.Parent := FTabBar;
   Btn.Align := TAlignLayout.Left;
@@ -1101,9 +1038,7 @@ begin
   if FActiveTab = ATab then
     FActiveTab := nil;
 
-  (* OnTabClosed эмитится ДО Remove, пока ATab ещё жив — подписчик
-     может прочитать Caption/Glyph. После Remove TObjectList.OwnsObjects
-     уничтожит таб. *)
+  (* OnTabClosed — до Remove: TObjectList.OwnsObjects уничтожит ATab. *)
   if Assigned(FOnTabClosed) then
     FOnTabClosed(Self, ATab);
 
@@ -1147,8 +1082,6 @@ function TDockingTabHost.GetTab(AIndex: Integer): TDockingTab;
 begin
   Result := FTabs[AIndex];
 end;
-
-(* === Внутренние операции === *)
 
 procedure TDockingTabHost.InternalActivateTab(ATab: TDockingTab);
 var
@@ -1242,8 +1175,8 @@ begin
   end;
   if DesiredTotal <= 0 then Exit;
 
-  (* Если FMX ещё не успел разложить TabBar, всё равно сразу
-     ставим естественные ширины. Сжатие включится на ближайшем resize. *)
+  (* До первой раскладки TabBar.Width = 0 — ставим естественные ширины,
+     сжатие сработает на ближайшем resize. *)
   AvailableWidth := FTabBar.Width - TAB_ADD_BUTTON_WIDTH - 8;
   if AvailableWidth <= 0 then
   begin
@@ -1385,8 +1318,6 @@ begin
   Result := AllOk;
 end;
 
-(* === Обработчики событий внутренних PaneHost-ов === *)
-
 procedure TDockingTabHost.HandlePaneHostActiveLeafChanged(Sender: TObject;
   AOldLeaf, ANewLeaf: TPaneLeaf);
 var
@@ -1396,7 +1327,6 @@ begin
   if not (Sender is TDockingPaneHost) then Exit;
   Host := TDockingPaneHost(Sender);
 
-  (* Обновить glyph таба — IsSingle мог измениться после split/close *)
   Tab := FindTabByPaneHost(Host);
   SyncTabCaptions;
   if (Tab <> nil) and (Tab.FButton <> nil) then
@@ -1407,7 +1337,7 @@ begin
 
   if not Host.IsEmpty then Exit;
 
-  (* Termius-style: pane host опустошился → закрываем таб *)
+  (* Termius-style: пустой PaneHost = закрытие таба. *)
   if Tab <> nil then
     ScheduleDeferredCloseTab(Tab);
 end;
@@ -1442,15 +1372,12 @@ begin
     FOnContentNeeded(Self, AContent);
   if AContent = nil then Exit;
 
-  (* Sender — всегда TDockingPaneHost (это callback OnContentNeeded хоста). *)
   Tab := FindTabByPaneHost(TDockingPaneHost(Sender));
   if Tab <> nil then
     EnsureContentCaption(AContent, Tab.Caption)
   else
     EnsureContentCaption(AContent, 'New tab');
 end;
-
-(* === API для TTabButton === *)
 
 procedure TDockingTabHost.TabButton_Activate(ATab: TDockingTab);
 begin
@@ -1560,8 +1487,6 @@ begin
   Result := FTabs.Count;
 end;
 
-(* === Drag-drop в split-зону (итерация 2.5) === *)
-
 procedure TDockingTabHost.TabButton_EnterPaneDrag(AButton: TTabButton);
 var
   Cur, Target: TDockingTab;
@@ -1572,16 +1497,15 @@ begin
 
   Cur := AButton.Tab;
 
-  (* Цель — активный таб. Особый случай: если тащимый и есть активный,
-     цель остаётся им же. В этом случае drop означает не перенос таба,
-     а "разделить нужный pane новым" (контент возьмём из фабрики). *)
+  (* Если тащимый = активный, цель остаётся им же. Тогда drop означает не
+     перенос, а "разделить мой pane новым" (контент возьмём из фабрики). *)
   Target := FActiveTab;
   if Target = nil then Target := Cur;
   FCurrentDropTarget := Target;
   FCurrentDropLeaf := nil;
 
-  (* Пересоздаём overlay каждый раз — избегаем накопления странностей
-     после прошлых drag-ов (Parent:=nil, скрытие и т.п.). *)
+  (* Пересоздаём overlay — переиспользование оставляет за собой
+     висящие Parent/Visible после прошлых drag-ов. *)
   if FDropOverlay <> nil then
   begin
     FDropOverlay.Parent := nil;
@@ -1594,9 +1518,7 @@ begin
   begin
     TargetPaneHost := Target.PaneHost;
     FDropOverlay.Parent := TargetPaneHost;
-    (* Стартовое позиционирование — на активный leaf, до первого
-       UpdatePaneDrag, который перепозиционирует по курсору.
-       Drop на свой же таб (источник = активный) не подсвечиваем — это no-op. *)
+    (* Drop на источник = no-op, оверлей не показываем. *)
     if Target <> Cur then
       FDropOverlay.ShowAt(TargetPaneHost.ActiveLeafBounds);
   end;
@@ -1630,8 +1552,7 @@ begin
     Exit;
   end;
 
-  (* Drop на свой же таб — overlay не показываем; HitTestZone у скрытого
-     оверлея вернёт NoZone, так что и сам drop станет no-op. *)
+  (* Drop на source: HitTestZone у скрытого оверлея вернёт NoZone, drop = no-op. *)
   if TargetTab = AButton.Tab then
   begin
     FDropOverlay.HideOverlay;
@@ -1640,9 +1561,8 @@ begin
     Exit;
   end;
 
-  (* Найти КОНКРЕТНЫЙ leaf под курсором (не обязательно активный).
-     Это даёт возможность сплитить любой pane целевого PaneHost-а,
-     а не только активный. *)
+  (* Конкретный leaf под курсором — а не FActiveLeaf — чтобы сплитить
+     можно было любой pane, не только активный. *)
   TargetLeaf := TargetTab.PaneHost.FindLeafAt(PaneLocalPt);
   if TargetLeaf = nil then
   begin
@@ -1651,7 +1571,6 @@ begin
     Exit;
   end;
 
-  (* Если поменялся целевой PaneHost ИЛИ leaf — пересоздать overlay на нём *)
   if (TargetTab <> FCurrentDropTarget) or (TargetLeaf <> FCurrentDropLeaf) then
   begin
     FCurrentDropTarget := TargetTab;
@@ -1691,8 +1610,7 @@ begin
 
   if Hit.HasZone and (TargetTab <> nil) and (TargetLeaf <> nil) then
   begin
-    (* Активировать конкретный leaf в target PaneHost, чтобы SplitActive
-       сработал именно на него (он сплитит активный leaf). *)
+    (* SplitActive сплитит активный leaf — выставляем нужный. *)
     TargetTab.PaneHost.ActiveLeaf := TargetLeaf;
     PerformDockMove(AButton.Tab, TargetTab, Hit.Direction);
   end;
@@ -1705,8 +1623,6 @@ var
 begin
   Result := nil;
   APaneLocalPt := PointF(0, 0);
-  (* В этой итерации цель = активный таб (фокусированный pane).
-     Если на v3 будет hit-test по другим табам — расширим логику. *)
   if FActiveTab = nil then Exit;
   Result := FActiveTab;
   TargetPaneHost := Result.PaneHost;
@@ -1727,24 +1643,19 @@ begin
 
   if ASourceTab = ATargetTab then
   begin
-    (* Тащимый = активный = target. Это не перенос таба, а просьба
-       "разделить мой текущий pane новым". SplitActive с nil заставит
-       PaneHost дёрнуть свою фабрику OnContentNeeded (которая у нас
-       форвардит к OnContentNeeded TabHost-а). *)
+    (* Drop на самого себя: запрос "split моим же pane новым".
+       SplitActive с nil дёрнет фабрику OnContentNeeded. *)
     ATargetTab.PaneHost.SplitActive(ADir, nil);
     Exit;
   end;
 
   if not ASourceTab.IsSingle then Exit;
 
-  (* Перенос: забрать контент из source и вложить в split target *)
   Content := ASourceTab.PaneHost.TakeActiveContent;
   if Content = nil then Exit;
   EnsureContentCaption(Content, ASourceTab.Caption);
   ATargetTab.PaneHost.SplitActive(ADir, Content);
 end;
-
-(* === Drag header pane-а === *)
 
 procedure TDockingTabHost.HandlePaneHostHeaderDrag(ASender: TDockingPaneHost;
   ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
@@ -1764,8 +1675,7 @@ begin
   FHeaderDragOverTabBar := False;
   Cursor := crDrag;
 
-  (* Пересоздаём overlay, как делает TabButton_EnterPaneDrag — чтобы
-     избежать накопленных проблем с Parent/Visible после прошлых drag-ов. *)
+  (* См. комментарий в TabButton_EnterPaneDrag — пересоздаём overlay. *)
   if FDropOverlay <> nil then
   begin
     FDropOverlay.Parent := nil;
@@ -1794,7 +1704,6 @@ begin
 
   if IsOverTabBar then
   begin
-    (* Skрываем split-overlay, показываем подсказку в таббаре. *)
     FDropOverlay.HideOverlay;
     FCurrentDropTarget := nil;
     FCurrentDropLeaf := nil;
@@ -1812,7 +1721,6 @@ begin
     PaneHeader_HideTabBarHint;
   end;
 
-  (* Над активным pane host-ом — обычная split-логика *)
   if FActiveTab = nil then Exit;
   TargetTab := FActiveTab;
   PaneLocalPt := TargetTab.PaneHost.ScreenToLocal(AScreenPt);
@@ -1825,9 +1733,7 @@ begin
     Exit;
   end;
 
-  (* Drop на тот же лист, который тащим — overlay прячем. Так юзер сразу
-     видит, что drop на самого себя ничего не сделает (HitTestZone у скрытого
-     overlay вернёт NoZone, и PaneHeader_End не выполнит split). *)
+  (* Drop на source-leaf: HitTestZone у скрытого overlay = NoZone, split не сработает. *)
   if TargetLeaf = FHeaderDragSourceLeaf then
   begin
     FDropOverlay.HideOverlay;
@@ -1880,8 +1786,8 @@ begin
       Hit := FDropOverlay.HitTestZone(PaneLocalPt.X, PaneLocalPt.Y);
   end;
 
-  (* Чистим визуал ДО действий — иначе при пересборке деревьев
-     overlay может зацепиться за исчезающие layout-ы. *)
+  (* Очистка визуала до мутаций деревьев — иначе overlay
+     зацепится за исчезающие layout-ы и AV. *)
   FDropOverlay.HideOverlay;
   FDropOverlay.Parent := nil;
   FCurrentDropTarget := nil;
@@ -1895,7 +1801,6 @@ begin
 
   if (SourceLeaf = nil) or (SourceHost = nil) then Exit;
 
-  (* Drop на TabBar — новый таб с содержимым source. *)
   if IsOverTabBar then
   begin
     NewCaption := 'New tab';
@@ -1912,10 +1817,9 @@ begin
     Exit;
   end;
 
-  (* Drop на pane — split цели. *)
   if not Hit.HasZone then Exit;
   if (TargetTab = nil) or (TargetLeaf = nil) then Exit;
-  if TargetLeaf = SourceLeaf then Exit;     (* drop на себя — no-op *)
+  if TargetLeaf = SourceLeaf then Exit;
 
   Content := SourceHost.TakeLeafContent(SourceLeaf);
   if Content = nil then Exit;
@@ -1925,9 +1829,7 @@ begin
   else
     EnsureContentCaption(Content, 'New tab');
 
-  (* После TakeLeafContent дерево source могло перестроиться,
-     но target leaf жив (мы трогали только source). Активируем
-     цель и сплитим её. *)
+  (* TakeLeafContent трогает только source-дерево — target leaf жив. *)
   TargetTab.PaneHost.ActiveLeaf := TargetLeaf;
   TargetTab.PaneHost.SplitActive(Hit.Direction, Content);
 end;
@@ -1938,7 +1840,6 @@ var
   IndicatorX: Single;
 begin
   if FDropIndicator = nil then Exit;
-  (* Индикатор справа от последнего таба — место, куда добавится новый *)
   if FTabs.Count > 0 then
   begin
     LastBtn := FTabs[FTabs.Count - 1].FButton;
