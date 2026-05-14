@@ -51,8 +51,11 @@ const
   TAB_ADD_BUTTON_WIDTH        = 32;
   TAB_DRAG_THRESHOLD          = 5;
   TAB_DROP_INDICATOR_WIDTH    = 2;
+  (* Подстраховка против TextLayout.Width = 0 на первой раскладке
+     (до того как FMX отрисовал шрифт). ≈ ширина символа при FontSize=13. *)
   TAB_TEXT_AVG_CHAR_WIDTH     = 7.5;
   TAB_GROUP_CAPTION           = 'Group';
+  TAB_CLOSE_HOVER_COLOR       = TAlphaColor($30000000);
 
 type
   TDockingTabHost = class;
@@ -112,6 +115,7 @@ type
     FDragStartX: Single;
     FDragStartY: Single;
     FEditingCaption: Boolean;
+    FHovered: Boolean;
     procedure BeginRename;
     procedure CommitRename;
     procedure CancelRename;
@@ -125,6 +129,10 @@ type
       Shift: TShiftState; X, Y: Single);
     procedure HandleCloseMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleMouseEnter(Sender: TObject);
+    procedure HandleMouseLeave(Sender: TObject);
+    procedure HandleCloseMouseEnter(Sender: TObject);
+    procedure HandleCloseMouseLeave(Sender: TObject);
     procedure HandleResize(Sender: TObject);
     procedure HandleEditExit(Sender: TObject);
     procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
@@ -180,6 +188,8 @@ type
     procedure HandleTabBarResize(Sender: TObject);
     procedure HandleAddButtonClick(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleAddButtonMouseEnter(Sender: TObject);
+    procedure HandleAddButtonMouseLeave(Sender: TObject);
     procedure HandlePaneHostActiveLeafChanged(Sender: TObject;
       AOldLeaf, ANewLeaf: TPaneLeaf);
     procedure HandlePaneHostContentHeaderChanged(Sender: TObject;
@@ -384,6 +394,8 @@ begin
   FCloseBtn.YRadius := 3;
   FCloseBtn.HitTest := True;
   FCloseBtn.OnMouseDown := HandleCloseMouseDown;
+  FCloseBtn.OnMouseEnter := HandleCloseMouseEnter;
+  FCloseBtn.OnMouseLeave := HandleCloseMouseLeave;
 
   FCloseGlyph := TText.Create(Self);
   FCloseGlyph.Parent := FCloseBtn;
@@ -398,6 +410,8 @@ begin
   OnMouseMove := HandleMouseMove;
   OnMouseUp := HandleMouseUp;
   OnDblClick := HandleDblClick;
+  OnMouseEnter := HandleMouseEnter;
+  OnMouseLeave := HandleMouseLeave;
   OnResize := HandleResize;
 
   UpdateCaption;
@@ -609,6 +623,8 @@ begin
   if Host = nil then Exit;
   if AIsActive then
     Fill.Color := Host.TabActiveColor
+  else if FHovered then
+    Fill.Color := Host.TabHoverColor
   else
     Fill.Color := Host.TabInactiveColor;
   FCaptionLabel.TextSettings.FontColor := Host.TabTextColor;
@@ -750,6 +766,33 @@ begin
   UpdateChildLayout;
 end;
 
+procedure TTabButton.HandleMouseEnter(Sender: TObject);
+begin
+  FHovered := True;
+  if FTab <> nil then
+    UpdateVisual(FTab.Owner.ActiveTab = FTab);
+end;
+
+procedure TTabButton.HandleMouseLeave(Sender: TObject);
+begin
+  FHovered := False;
+  if FTab <> nil then
+    UpdateVisual(FTab.Owner.ActiveTab = FTab);
+end;
+
+procedure TTabButton.HandleCloseMouseEnter(Sender: TObject);
+begin
+  if FCloseBtn = nil then Exit;
+  FCloseBtn.Fill.Kind := TBrushKind.Solid;
+  FCloseBtn.Fill.Color := TAB_CLOSE_HOVER_COLOR;
+end;
+
+procedure TTabButton.HandleCloseMouseLeave(Sender: TObject);
+begin
+  if FCloseBtn = nil then Exit;
+  FCloseBtn.Fill.Kind := TBrushKind.None;
+end;
+
 procedure TTabButton.HandleEditExit(Sender: TObject);
 begin
   CommitRename;
@@ -855,6 +898,8 @@ begin
   FAddButton.YRadius := 3;
   FAddButton.HitTest := True;
   FAddButton.OnMouseDown := HandleAddButtonClick;
+  FAddButton.OnMouseEnter := HandleAddButtonMouseEnter;
+  FAddButton.OnMouseLeave := HandleAddButtonMouseLeave;
 
   FAddGlyph := TText.Create(Self);
   FAddGlyph.Parent := FAddButton;
@@ -891,6 +936,19 @@ procedure TDockingTabHost.HandleAddButtonClick(Sender: TObject;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   AddTab('New tab ' + (FTabs.Count + 1).ToString);
+end;
+
+procedure TDockingTabHost.HandleAddButtonMouseEnter(Sender: TObject);
+begin
+  if FAddButton = nil then Exit;
+  FAddButton.Fill.Kind := TBrushKind.Solid;
+  FAddButton.Fill.Color := TAB_CLOSE_HOVER_COLOR;
+end;
+
+procedure TDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);
+begin
+  if FAddButton = nil then Exit;
+  FAddButton.Fill.Kind := TBrushKind.None;
 end;
 
 (* === Очередь отложенных закрытий === *)
@@ -937,6 +995,9 @@ begin
 
   Btn := TTabButton.Create(Self, NewTab);
   NewTab.FButton := Btn;
+  (* FMX-хак: при Parent := FTabBar c уже выставленным Align=Left
+     кнопка может вставиться не в конец Children. Временный Right
+     вынуждает добавление в конец, после чего возвращаем Left. *)
   Btn.Align := TAlignLayout.Right;
   Btn.Parent := FTabBar;
   Btn.Align := TAlignLayout.Left;
@@ -973,6 +1034,9 @@ begin
 
   Btn := TTabButton.Create(Self, NewTab);
   NewTab.FButton := Btn;
+  (* FMX-хак: при Parent := FTabBar c уже выставленным Align=Left
+     кнопка может вставиться не в конец Children. Временный Right
+     вынуждает добавление в конец, после чего возвращаем Left. *)
   Btn.Align := TAlignLayout.Right;
   Btn.Parent := FTabBar;
   Btn.Align := TAlignLayout.Left;
@@ -1037,13 +1101,16 @@ begin
   if FActiveTab = ATab then
     FActiveTab := nil;
 
+  (* OnTabClosed эмитится ДО Remove, пока ATab ещё жив — подписчик
+     может прочитать Caption/Glyph. После Remove TObjectList.OwnsObjects
+     уничтожит таб. *)
+  if Assigned(FOnTabClosed) then
+    FOnTabClosed(Self, ATab);
+
   FTabs.Remove(ATab);
   SyncTabCaptions;
 
   InternalActivateTab(NextActive);
-
-  if Assigned(FOnTabClosed) then
-    FOnTabClosed(Self, nil);
 end;
 
 procedure TDockingTabHost.ActivateTab(ATab: TDockingTab);
@@ -1369,22 +1436,16 @@ end;
 procedure TDockingTabHost.HandlePaneHostContentNeeded(Sender: TObject;
   var AContent: TDockingPaneContent);
 var
-  Host: TDockingPaneHost;
   Tab: TDockingTab;
 begin
   if Assigned(FOnContentNeeded) then
     FOnContentNeeded(Self, AContent);
   if AContent = nil then Exit;
 
-  if Sender is TDockingPaneHost then
-  begin
-    Host := TDockingPaneHost(Sender);
-    Tab := FindTabByPaneHost(Host);
-    if Tab <> nil then
-      EnsureContentCaption(AContent, Tab.Caption)
-    else
-      EnsureContentCaption(AContent, 'New tab');
-  end
+  (* Sender — всегда TDockingPaneHost (это callback OnContentNeeded хоста). *)
+  Tab := FindTabByPaneHost(TDockingPaneHost(Sender));
+  if Tab <> nil then
+    EnsureContentCaption(AContent, Tab.Caption)
   else
     EnsureContentCaption(AContent, 'New tab');
 end;
@@ -1798,7 +1859,7 @@ var
   Content: TDockingPaneContent;
   SourceLeaf: TPaneLeaf;
   SourceHost: TDockingPaneHost;
-  Caption: string;
+  NewCaption: string;
 begin
   SourceLeaf := FHeaderDragSourceLeaf;
   SourceHost := FHeaderDragSourceHost;
@@ -1837,16 +1898,16 @@ begin
   (* Drop на TabBar — новый таб с содержимым source. *)
   if IsOverTabBar then
   begin
-    Caption := 'New tab';
+    NewCaption := 'New tab';
     SourceTab := FindTabByPaneHost(SourceHost);
     if SourceTab <> nil then
-      Caption := SourceTab.Caption;
-    Caption := CaptionForContent(SourceLeaf.Content, Caption);
+      NewCaption := SourceTab.Caption;
+    NewCaption := CaptionForContent(SourceLeaf.Content, NewCaption);
     Content := SourceHost.TakeLeafContent(SourceLeaf);
     if Content <> nil then
     begin
-      EnsureContentCaption(Content, Caption);
-      AddTabWithContent(Caption, Content);
+      EnsureContentCaption(Content, NewCaption);
+      AddTabWithContent(NewCaption, Content);
     end;
     Exit;
   end;
