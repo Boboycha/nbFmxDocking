@@ -1,0 +1,60 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{12856E0D-AA46-44E0-85E6-B648E30AB458}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="Z:\pr\TerminalTest\src\Project1.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="src\nbFMXDocking.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="demo\DockingTest.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="Project1">
+        <MSBuild Projects="Z:\pr\TerminalTest\src\Project1.dproj"/>
+    </Target>
+    <Target Name="Project1:Clean">
+        <MSBuild Projects="Z:\pr\TerminalTest\src\Project1.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="Project1:Make">
+        <MSBuild Projects="Z:\pr\TerminalTest\src\Project1.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="nbFMXDocking">
+        <MSBuild Projects="src\nbFMXDocking.dproj"/>
+    </Target>
+    <Target Name="nbFMXDocking:Clean">
+        <MSBuild Projects="src\nbFMXDocking.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="nbFMXDocking:Make">
+        <MSBuild Projects="src\nbFMXDocking.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="DockingTest">
+        <MSBuild Projects="demo\DockingTest.dproj"/>
+    </Target>
+    <Target Name="DockingTest:Clean">
+        <MSBuild Projects="demo\DockingTest.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="DockingTest:Make">
+        <MSBuild Projects="demo\DockingTest.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="Project1;nbFMXDocking;DockingTest"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="Project1:Clean;nbFMXDocking:Clean;DockingTest:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="Project1:Make;nbFMXDocking:Make;DockingTest:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

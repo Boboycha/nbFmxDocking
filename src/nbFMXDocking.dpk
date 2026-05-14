@@ -1,0 +1,67 @@
+package nbFMXDocking;
+
+{$R *.res}
+{$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
+{$ALIGN 8}
+{$ASSERTIONS ON}
+{$BOOLEVAL OFF}
+{$DEBUGINFO OFF}
+{$EXTENDEDSYNTAX ON}
+{$IMPORTEDDATA ON}
+{$IOCHECKS ON}
+{$LOCALSYMBOLS ON}
+{$LONGSTRINGS ON}
+{$OPENSTRINGS ON}
+{$OPTIMIZATION OFF}
+{$OVERFLOWCHECKS ON}
+{$RANGECHECKS ON}
+{$REFERENCEINFO ON}
+{$SAFEDIVIDE OFF}
+{$STACKFRAMES ON}
+{$TYPEDADDRESS OFF}
+{$VARSTRINGCHECKS ON}
+{$WRITEABLECONST OFF}
+{$MINENUMSIZE 1}
+{$IMAGEBASE $400000}
+{$DEFINE DEBUG}
+{$ENDIF IMPLICITBUILDING}
+{$DESCRIPTION 'nb FMX Docking - generic tab/split/dock UI for FireMonkey applications'}
+{$DESIGNONLY}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  fmx,
+  DesignIDE;
+
+contains
+  nbDocking.Types in 'nbDocking.Types.pas',
+  nbDocking.PaneTree in 'nbDocking.PaneTree.pas',
+  nbDocking.PaneHost in 'nbDocking.PaneHost.pas',
+  nbDocking.DropOverlay in 'nbDocking.DropOverlay.pas',
+  nbDocking.TabHost in 'nbDocking.TabHost.pas',
+  nbDocking.Demo in 'nbDocking.Demo.pas',
+  Reg_nbFMXDocking in 'Reg_nbFMXDocking.pas';
+
+(* План пакета по итерациям:
+
+   Итерация 1 (готова):
+     [x] nbDocking.Types        — TDockingPaneContent, енумы, события
+     [x] nbDocking.PaneTree     — N-арное дерево pane-узлов
+     [x] nbDocking.PaneHost     — визуальный контейнер дерева + active leaf
+     [x] nbDocking.Demo         — TDockingDemoPane для проверки движка
+
+   Итерация 2 (текущая):
+     [x] nbDocking.TabHost      — несколько PaneHost-ов как табы + drag-drop
+
+   Итерация 3:
+     [ ] nbDocking.Shell        — sidebar | main | bottom (Termius-сетка)
+
+   Итерация 4:
+     [ ] nbDocking.FloatWindow  — отстыковка pane в отдельную форму
+
+   Итерация 5:
+     [ ] nbDocking.Persistence  — JSON сохранение/восстановление layout
+*)
+
+end.
