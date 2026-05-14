@@ -46,6 +46,7 @@ const
   TAB_BAR_HEIGHT              = 34;
   TAB_BUTTON_MIN_WIDTH        = 72;
   TAB_BUTTON_CLOSE_SIZE       = 18;
+  TAB_BUTTON_GROUP_GLYPH_WIDTH = 16;
   TAB_BUTTON_PADDING          = 8;
   TAB_ADD_BUTTON_WIDTH        = 32;
   TAB_DRAG_THRESHOLD          = 5;
@@ -355,8 +356,8 @@ begin
   FGroupGlyph := TText.Create(Self);
   FGroupGlyph.Parent := Self;
   FGroupGlyph.Align := TAlignLayout.Left;
-  FGroupGlyph.Width := 16;
-  FGroupGlyph.Margins.Rect := RectF(TAB_BUTTON_PADDING, 0, 0, 0);
+  FGroupGlyph.Width := 0;
+  FGroupGlyph.Margins.Rect := RectF(0, 0, 0, 0);
   FGroupGlyph.Text := '▦';
   FGroupGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FGroupGlyph.TextSettings.VertAlign := TTextAlign.Center;
@@ -486,7 +487,7 @@ begin
     + TextWidth;
 
   if not FTab.IsSingle then
-    Result := Result + FGroupGlyph.Width + TAB_BUTTON_PADDING;
+    Result := Result + TAB_BUTTON_GROUP_GLYPH_WIDTH + TAB_BUTTON_PADDING;
 
   if Result < TAB_BUTTON_MIN_WIDTH then
     Result := TAB_BUTTON_MIN_WIDTH;
@@ -507,7 +508,19 @@ begin
 
   IsGroup := not FTab.IsSingle;
   if FGroupGlyph <> nil then
+  begin
     FGroupGlyph.Visible := IsGroup;
+    if IsGroup then
+    begin
+      FGroupGlyph.Width := TAB_BUTTON_GROUP_GLYPH_WIDTH;
+      FGroupGlyph.Margins.Rect := RectF(TAB_BUTTON_PADDING, 0, 0, 0);
+    end
+    else
+    begin
+      FGroupGlyph.Width := 0;
+      FGroupGlyph.Margins.Rect := RectF(0, 0, 0, 0);
+    end;
+  end;
 end;
 
 procedure TTabButton.UpdateVisual(AIsActive: Boolean);
