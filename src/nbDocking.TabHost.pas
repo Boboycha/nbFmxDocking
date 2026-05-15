@@ -65,6 +65,9 @@ type
   end;
 
   TDockingTabEvent = procedure(Sender: TObject; ATab: TDockingTab) of object;
+  TDockingTabClickEvent = procedure(Sender: TObject; ATab: TDockingTab;
+    Button: TMouseButton; Shift: TShiftState; const AScreenPt: TPointF;
+    var AHandled: Boolean) of object;
   TDockingTabClosingEvent = procedure(Sender: TObject; ATab: TDockingTab;
     var ACanClose: Boolean) of object;
   TDockingActiveTabChangeEvent = procedure(Sender: TObject;
@@ -150,6 +153,7 @@ type
 
     FOnContentNeeded: TContentFactoryEvent;
     FOnTabAdded: TDockingTabEvent;
+    FOnTabClick: TDockingTabClickEvent;
     FOnTabClosing: TDockingTabClosingEvent;
     FOnTabClosed: TDockingTabEvent;
     FOnActiveTabChanged: TDockingActiveTabChangeEvent;
@@ -182,6 +186,8 @@ type
     procedure ScheduleDeferredCloseTab(ATab: TDockingTab);
 
     procedure TabButton_Activate(ATab: TDockingTab);
+    function TabButton_Click(ATab: TDockingTab; Button: TMouseButton;
+      Shift: TShiftState; const AScreenPt: TPointF): Boolean;
     procedure TabButton_RequestClose(ATab: TDockingTab);
     procedure TabButton_StartDrag(AButton: TTabButton);
     procedure TabButton_UpdateDrag(AButton: TTabButton; AScreenX: Single);
@@ -221,6 +227,7 @@ type
       AContent: TDockingPaneContent): TDockingTab;
 
     procedure CloseTab(ATab: TDockingTab);
+    procedure CloseOtherTabs(ATab: TDockingTab);
     procedure ActivateTab(ATab: TDockingTab);
     procedure MoveTab(ATab: TDockingTab; ANewIndex: Integer);
 
@@ -240,6 +247,8 @@ type
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
     property OnTabAdded: TDockingTabEvent read FOnTabAdded write FOnTabAdded;
+    property OnTabClick: TDockingTabClickEvent read FOnTabClick
+      write FOnTabClick;
     property OnTabClosing: TDockingTabClosingEvent read FOnTabClosing
       write FOnTabClosing;
     property OnTabClosed: TDockingTabEvent read FOnTabClosed write FOnTabClosed;
@@ -601,10 +610,25 @@ end;
 
 procedure TTabButton.HandleMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: Single);
+var
+  ScreenPt: TPointF;
 begin
-  if Button <> TMouseButton.mbLeft then Exit;
   if FTab = nil then Exit;
   if FEditingCaption then Exit;
+
+  if Button = TMouseButton.mbRight then
+  begin
+    FDragState := dsIdle;
+    ScreenPt := LocalToScreen(PointF(X, Y));
+    if FTab.Owner <> nil then
+    begin
+      FTab.Owner.TabButton_Activate(FTab);
+      FTab.Owner.TabButton_Click(FTab, Button, Shift, ScreenPt);
+    end;
+    Exit;
+  end;
+
+  if Button <> TMouseButton.mbLeft then Exit;
 
   (* Активация отложена до MouseUp: иначе drag не-активного таба сразу
      делает его активным, и drop-логика трактует это как drop-в-себя. *)
@@ -702,8 +726,12 @@ begin
         Opacity := 1.0;
       end;
     dsArmed:
-      (* Чистый клик — активация, отложенная из MouseDown. *)
-      Host.TabButton_Activate(FTab);
+      begin
+        ScreenPt := LocalToScreen(PointF(X, Y));
+        if not Host.TabButton_Click(FTab, Button, Shift, ScreenPt) then
+          (* Чистый клик — активация, отложенная из MouseDown. *)
+          Host.TabButton_Activate(FTab);
+      end;
   end;
 end;
 
@@ -1048,6 +1076,22 @@ begin
   InternalActivateTab(NextActive);
 end;
 
+procedure TDockingTabHost.CloseOtherTabs(ATab: TDockingTab);
+var
+  I: Integer;
+  Tab: TDockingTab;
+begin
+  if IndexOfTab(ATab) < 0 then Exit;
+
+  InternalActivateTab(ATab);
+  for I := FTabs.Count - 1 downto 0 do
+  begin
+    Tab := FTabs[I];
+    if Tab <> ATab then
+      CloseTab(Tab);
+  end;
+end;
+
 procedure TDockingTabHost.ActivateTab(ATab: TDockingTab);
 begin
   InternalActivateTab(ATab);
@@ -1382,6 +1426,15 @@ end;
 procedure TDockingTabHost.TabButton_Activate(ATab: TDockingTab);
 begin
   InternalActivateTab(ATab);
+end;
+
+function TDockingTabHost.TabButton_Click(ATab: TDockingTab;
+  Button: TMouseButton; Shift: TShiftState;
+  const AScreenPt: TPointF): Boolean;
+begin
+  Result := False;
+  if Assigned(FOnTabClick) then
+    FOnTabClick(Self, ATab, Button, Shift, AScreenPt, Result);
 end;
 
 procedure TDockingTabHost.TabButton_RequestClose(ATab: TDockingTab);
