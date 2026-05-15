@@ -22,6 +22,8 @@ type
 
 procedure DoNeedContent(Sender: TObject;
   var AContent: TDockingPaneContent);
+  procedure HandlePaneHeaderAction(Sender: TDockingPaneContent;
+    const AActionId: string);
 
   public
     { Public declarations }
@@ -57,5 +59,17 @@ procedure TForm1.DoNeedContent(Sender: TObject;
   var AContent: TDockingPaneContent);
 begin
   AContent := TDockingPaneContent.Create(TDockingTabHost(Sender));
+  AContent.AddHeaderAction('mark', '+', HandlePaneHeaderAction, 'Mark');
+  AContent.AddHeaderAction('remove-action', 'D', HandlePaneHeaderAction,
+    'Remove this button');
+end;
+
+procedure TForm1.HandlePaneHeaderAction(Sender: TDockingPaneContent;
+  const AActionId: string);
+begin
+  if SameText(AActionId, 'mark') then
+    Sender.Caption := Sender.Caption + ' *'
+  else if SameText(AActionId, 'remove-action') then
+    Sender.RemoveHeaderAction(AActionId);
 end;
 end.

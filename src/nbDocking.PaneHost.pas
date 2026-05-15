@@ -48,6 +48,16 @@ type
 
   TPaneHeaderDragState = (hdsIdle, hdsArmed, hdsDragging);
 
+  TPaneHeaderActionButton = class(TRectangle)
+  public
+    ActionId: string;
+  end;
+
+  TPaneFocusItem = class(TRectangle)
+  public
+    Leaf: TPaneLeaf;
+  end;
+
   TPaneLeafFrame = class(TRectangle)
   private
     FHost: TDockingPaneHost;
@@ -56,15 +66,24 @@ type
     FTitleLabel: TLabel;
     FTitleEdit: TEdit;
     FActionsLayout: TLayout;
+    FFocusBtn: TRectangle;
+    FFocusGlyph: TText;
     FCloseBtn: TRectangle;
     FCloseGlyph: TText;
+    FActionButtons: TList<TPaneHeaderActionButton>;
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
     FEditingTitle: Boolean;
     procedure BeginRename;
     procedure CommitRename;
     procedure CancelRename;
+    procedure RebuildHeaderActions;
+    procedure LayoutHeaderActionButtons;
     procedure HandleFrameMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure HandleActionMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure HandleFocusMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleCloseMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -80,6 +99,7 @@ type
       var KeyChar: Char; Shift: TShiftState);
   public
     constructor Create(AHost: TDockingPaneHost; ALeaf: TPaneLeaf); reintroduce;
+    destructor Destroy; override;
     procedure UpdateFromContent;
     procedure SetActive(AIsActive: Boolean);
     procedure SetHeaderVisible(AVisible: Boolean);
@@ -107,6 +127,7 @@ type
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
     FOnHeaderDrag: TPaneHeaderDragEvent;
+    FFocusMode: Boolean;
 
     procedure HandleTreeChanged(Sender: TPaneTree);
     procedure HandleContentSplitRequest(Sender: TDockingPaneContent;
@@ -121,6 +142,7 @@ type
     procedure WireContent(AContent: TDockingPaneContent);
     procedure DetachAllContents;
     procedure RebuildVisualTree;
+    procedure RebuildFocusVisualTree;
     function BuildNode(ANode: TPaneNode; AContainer: TFmxObject;
       AAlign: TAlignLayout; ASize: Single): TFmxObject;
     function BuildLeaf(ALeaf: TPaneLeaf; AContainer: TFmxObject;
@@ -135,6 +157,9 @@ type
     procedure UpdateActiveFrames;
     procedure InternalSetActive(ALeaf: TPaneLeaf);
     procedure SetActiveLeaf(AValue: TPaneLeaf);
+    procedure SetFocusMode(AValue: Boolean);
+    procedure HandleFocusItemMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -153,6 +178,9 @@ type
 
     procedure NotifyHeaderDrag(ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase;
       const AScreenPt: TPointF);
+    procedure EnterFocusMode;
+    procedure ExitFocusMode;
+    procedure ToggleFocusMode;
 
     function ActiveLeafContent: TDockingPaneContent;
     function ActiveLeafBounds: TRectF;
@@ -161,6 +189,7 @@ type
 
     property Tree: TPaneTree read FTree;
     property ActiveLeaf: TPaneLeaf read FActiveLeaf write SetActiveLeaf;
+    property FocusMode: Boolean read FFocusMode write SetFocusMode;
   published
     property LeafFrameThickness: Single read FLeafFrameThickness
       write FLeafFrameThickness;
@@ -202,6 +231,7 @@ begin
   inherited Create(AHost);
   FHost := AHost;
   FLeaf := ALeaf;
+  FActionButtons := TList<TPaneHeaderActionButton>.Create;
   XRadius:=10;
   YRadius:=10;
   (* TagObject связывает frame с листом для FindFrameRectFor. *)
@@ -258,10 +288,33 @@ begin
   FTitleEdit.OnExit := HandleEditExit;
   FTitleEdit.OnKeyDown := HandleEditKeyDown;
 
+  FFocusBtn := TRectangle.Create(Self);
+  FFocusBtn.Parent := FActionsLayout;
+  FFocusBtn.Align := TAlignLayout.None;
+  FFocusBtn.Width := 20;
+  FFocusBtn.Height := AHost.HeaderHeight - 7;
+  FFocusBtn.Margins.Rect := RectF(0, 3, 4, 3);
+  FFocusBtn.Fill.Kind := TBrushKind.None;
+  FFocusBtn.Stroke.Kind := TBrushKind.None;
+  FFocusBtn.XRadius := 3;
+  FFocusBtn.YRadius := 3;
+  FFocusBtn.HitTest := True;
+  FFocusBtn.OnMouseDown := HandleFocusMouseDown;
+
+  FFocusGlyph := TText.Create(Self);
+  FFocusGlyph.Parent := FFocusBtn;
+  FFocusGlyph.Align := TAlignLayout.Client;
+  FFocusGlyph.Text := 'F';
+  FFocusGlyph.TextSettings.HorzAlign := TTextAlign.Center;
+  FFocusGlyph.TextSettings.VertAlign := TTextAlign.Center;
+  FFocusGlyph.TextSettings.Font.Size := 11;
+  FFocusGlyph.HitTest := False;
+
   FCloseBtn := TRectangle.Create(Self);
   FCloseBtn.Parent := FActionsLayout;
-  FCloseBtn.Align := TAlignLayout.Right;
+  FCloseBtn.Align := TAlignLayout.None;
   FCloseBtn.Width := 20;
+  FCloseBtn.Height := AHost.HeaderHeight - 7;
   FCloseBtn.Margins.Rect := RectF(0, 3, 4, 3);
   FCloseBtn.Fill.Kind := TBrushKind.None;
   FCloseBtn.Stroke.Kind := TBrushKind.None;
@@ -280,6 +333,17 @@ begin
   FCloseGlyph.HitTest := False;
 
   FHeader.OnDblClick := HandleHeaderDblClick;
+  LayoutHeaderActionButtons;
+end;
+
+destructor TPaneLeafFrame.Destroy;
+var
+  I: Integer;
+begin
+  for I := FActionButtons.Count - 1 downto 0 do
+    FActionButtons[I].Free;
+  FActionButtons.Free;
+  inherited;
 end;
 
 procedure TPaneLeafFrame.BeginRename;
@@ -343,8 +407,103 @@ begin
 
   FHeader.Fill.Color := C.HeaderBgColor;
   FTitleLabel.TextSettings.FontColor := C.HeaderTextColor;
+  FFocusGlyph.TextSettings.FontColor := C.HeaderTextColor;
   FCloseGlyph.TextSettings.FontColor := C.HeaderTextColor;
   FTitleLabel.Text := C.Caption;
+  RebuildHeaderActions;
+end;
+
+procedure TPaneLeafFrame.RebuildHeaderActions;
+var
+  C: TDockingPaneContent;
+  I: Integer;
+  Action: TDockingPaneHeaderAction;
+  ActionButton: TPaneHeaderActionButton;
+  ActionGlyph: TText;
+begin
+  if (FLeaf = nil) or (FActionsLayout = nil) then Exit;
+  C := FLeaf.Content;
+  if C = nil then Exit;
+
+  for I := FActionButtons.Count - 1 downto 0 do
+    FActionButtons[I].Free;
+  FActionButtons.Clear;
+
+  for I := 0 to C.HeaderActions.Count - 1 do
+  begin
+    Action := C.HeaderActions[I];
+
+    ActionButton := TPaneHeaderActionButton.Create(Self);
+    ActionButton.Parent := FActionsLayout;
+    ActionButton.Align := TAlignLayout.None;
+    ActionButton.Width := 20;
+    ActionButton.Height := FHost.HeaderHeight - 7;
+    ActionButton.Margins.Rect := RectF(0, 3, 4, 3);
+    ActionButton.Fill.Kind := TBrushKind.None;
+    ActionButton.Stroke.Kind := TBrushKind.None;
+    ActionButton.XRadius := 3;
+    ActionButton.YRadius := 3;
+    ActionButton.HitTest := True;
+    ActionButton.ActionId := Action.Id;
+    ActionButton.OnMouseDown := HandleActionMouseDown;
+
+    ActionGlyph := TText.Create(Self);
+    ActionGlyph.Parent := ActionButton;
+    ActionGlyph.Align := TAlignLayout.Client;
+    ActionGlyph.Text := Action.Glyph;
+    ActionGlyph.TextSettings.HorzAlign := TTextAlign.Center;
+    ActionGlyph.TextSettings.VertAlign := TTextAlign.Center;
+    ActionGlyph.TextSettings.Font.Size := 11;
+    ActionGlyph.TextSettings.FontColor := C.HeaderTextColor;
+    ActionGlyph.HitTest := False;
+
+    FActionButtons.Add(ActionButton);
+  end;
+
+  LayoutHeaderActionButtons;
+end;
+
+procedure TPaneLeafFrame.LayoutHeaderActionButtons;
+var
+  I: Integer;
+  FocusVisible: Boolean;
+  Slot: Integer;
+begin
+  if FActionsLayout = nil then Exit;
+
+  FocusVisible := (FHost.Tree.LeafCount >= 2) or FHost.FocusMode;
+  Slot := 0;
+  for I := 0 to FActionButtons.Count - 1 do
+  begin
+    FActionButtons[I].Position.X := Slot * 24;
+    FActionButtons[I].Position.Y := 3;
+    FActionButtons[I].Width := 20;
+    FActionButtons[I].Height := FHost.HeaderHeight - 7;
+    Inc(Slot);
+  end;
+
+  if FFocusBtn <> nil then
+  begin
+    FFocusBtn.Visible := FocusVisible;
+    if FocusVisible then
+    begin
+      FFocusBtn.Position.X := Slot * 24;
+      FFocusBtn.Position.Y := 3;
+      FFocusBtn.Width := 20;
+      FFocusBtn.Height := FHost.HeaderHeight - 7;
+      Inc(Slot);
+    end;
+  end;
+
+  if FCloseBtn <> nil then
+  begin
+    FCloseBtn.Position.X := Slot * 24;
+    FCloseBtn.Position.Y := 3;
+    FCloseBtn.Width := 20;
+    FCloseBtn.Height := FHost.HeaderHeight - 7;
+    Inc(Slot);
+  end;
+  FActionsLayout.Width := Slot * 24;
 end;
 
 procedure TPaneLeafFrame.SetActive(AIsActive: Boolean);
@@ -375,6 +534,36 @@ begin
   if FLeaf = nil then Exit;
   if FLeaf <> FHost.ActiveLeaf then
     FHost.ActiveLeaf := FLeaf;
+end;
+
+procedure TPaneLeafFrame.HandleActionMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var
+  C: TDockingPaneContent;
+  ActionButton: TPaneHeaderActionButton;
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if FEditingTitle then Exit;
+  if (FLeaf = nil) or not (Sender is TPaneHeaderActionButton) then Exit;
+
+  if FLeaf <> FHost.ActiveLeaf then
+    FHost.ActiveLeaf := FLeaf;
+
+  C := FLeaf.Content;
+  if C = nil then Exit;
+
+  ActionButton := TPaneHeaderActionButton(Sender);
+  C.ExecuteHeaderAction(ActionButton.ActionId);
+end;
+
+procedure TPaneLeafFrame.HandleFocusMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if FEditingTitle then Exit;
+  if (FLeaf <> nil) and (FLeaf <> FHost.ActiveLeaf) then
+    FHost.ActiveLeaf := FLeaf;
+  FHost.ToggleFocusMode;
 end;
 
 procedure TPaneLeafFrame.HandleCloseMouseDown(Sender: TObject;
@@ -567,6 +756,8 @@ end;
 
 procedure TDockingPaneHost.HandleTreeChanged(Sender: TPaneTree);
 begin
+  if FFocusMode and (FTree.LeafCount <= 1) then
+    FFocusMode := False;
   if not FBuilding then
     RebuildVisualTree;
 end;
@@ -713,8 +904,49 @@ end;
 procedure TDockingPaneHost.NotifyHeaderDrag(ALeaf: TPaneLeaf;
   APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
 begin
+  if FFocusMode then Exit;
   if Assigned(FOnHeaderDrag) then
     FOnHeaderDrag(Self, ALeaf, APhase, AScreenPt);
+end;
+
+procedure TDockingPaneHost.EnterFocusMode;
+begin
+  FocusMode := True;
+end;
+
+procedure TDockingPaneHost.ExitFocusMode;
+begin
+  FocusMode := False;
+end;
+
+procedure TDockingPaneHost.ToggleFocusMode;
+begin
+  FocusMode := not FFocusMode;
+end;
+
+procedure TDockingPaneHost.SetFocusMode(AValue: Boolean);
+begin
+  if AValue and (FTree.LeafCount <= 1) then
+    AValue := False;
+  if FFocusMode = AValue then Exit;
+
+  FFocusMode := AValue;
+  RebuildVisualTree;
+end;
+
+procedure TDockingPaneHost.HandleFocusItemMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var
+  Item: TPaneFocusItem;
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if not (Sender is TPaneFocusItem) then Exit;
+
+  Item := TPaneFocusItem(Sender);
+  if Item.Leaf = nil then Exit;
+
+  InternalSetActive(Item.Leaf);
+  RebuildVisualTree;
 end;
 
 function TDockingPaneHost.LeafBounds(ALeaf: TPaneLeaf): TRectF;
@@ -858,6 +1090,12 @@ begin
     FRootLayout.Parent := Self;
     FRootLayout.Align := TAlignLayout.Client;
 
+    if FFocusMode then
+    begin
+      RebuildFocusVisualTree;
+      Exit;
+    end;
+
     if FTree.Root <> nil then
       BuildNode(FTree.Root, FRootLayout, TAlignLayout.Client, 0);
 
@@ -869,6 +1107,110 @@ begin
   finally
     FBuilding := False;
   end;
+end;
+
+procedure TDockingPaneHost.RebuildFocusVisualTree;
+var
+  Sidebar: TLayout;
+  SidebarBg: TRectangle;
+  TitleLabel, ItemTitle, ItemSubTitle: TLabel;
+  ActiveFrame: TPaneLeafFrame;
+  Item: TPaneFocusItem;
+  TopOffset: Single;
+  CountText: string;
+begin
+  if FActiveLeaf = nil then
+    FActiveLeaf := FTree.FirstLeaf;
+  if FActiveLeaf = nil then Exit;
+
+  CountText := FTree.LeafCount.ToString;
+
+  Sidebar := TLayout.Create(Self);
+  Sidebar.Parent := FRootLayout;
+  Sidebar.Align := TAlignLayout.Left;
+  Sidebar.Width := 210;
+  Sidebar.Padding.Rect := RectF(8, 12, 8, 8);
+
+  SidebarBg := TRectangle.Create(Self);
+  SidebarBg.Parent := Sidebar;
+  SidebarBg.Align := TAlignLayout.Contents;
+  SidebarBg.Fill.Color := TAlphaColor($FF1E2233);
+  SidebarBg.Stroke.Kind := TBrushKind.None;
+  SidebarBg.HitTest := False;
+  SidebarBg.SendToBack;
+
+  TitleLabel := TLabel.Create(Self);
+  TitleLabel.Parent := Sidebar;
+  TitleLabel.Align := TAlignLayout.Top;
+  TitleLabel.Height := 34;
+  TitleLabel.Text := 'Panels - ' + CountText;
+  TitleLabel.StyledSettings := [];
+  TitleLabel.TextSettings.Font.Size := 12;
+  TitleLabel.TextSettings.FontColor := TAlphaColor($FFB8BED6);
+  TitleLabel.TextSettings.VertAlign := TTextAlign.Center;
+  TitleLabel.HitTest := False;
+
+  TopOffset := 44;
+  FTree.EnumerateLeaves(
+    procedure(ALeaf: TPaneLeaf)
+    var
+      CaptionText: string;
+    begin
+      if ALeaf.Content <> nil then
+        CaptionText := ALeaf.Content.Caption
+      else
+        CaptionText := 'Panel';
+
+      Item := TPaneFocusItem.Create(Self);
+      Item.Parent := Sidebar;
+      Item.Align := TAlignLayout.None;
+      Item.Position.X := 0;
+      Item.Position.Y := TopOffset;
+      Item.Width := Sidebar.Width - Sidebar.Padding.Left - Sidebar.Padding.Right;
+      Item.Height := 46;
+      Item.Leaf := ALeaf;
+      Item.XRadius := 6;
+      Item.YRadius := 6;
+      Item.Stroke.Kind := TBrushKind.None;
+      Item.HitTest := True;
+      Item.OnMouseDown := HandleFocusItemMouseDown;
+      if ALeaf = FActiveLeaf then
+        Item.Fill.Color := TAlphaColor($FF2A2E44)
+      else
+        Item.Fill.Color := TAlphaColor($001E2233);
+
+      ItemTitle := TLabel.Create(Self);
+      ItemTitle.Parent := Item;
+      ItemTitle.Align := TAlignLayout.Top;
+      ItemTitle.Height := 24;
+      ItemTitle.Margins.Rect := RectF(10, 4, 8, 0);
+      ItemTitle.Text := CaptionText;
+      ItemTitle.StyledSettings := [];
+      ItemTitle.TextSettings.Font.Size := 12;
+      if ALeaf = FActiveLeaf then
+        ItemTitle.TextSettings.FontColor := TAlphaColor($FF00E08A)
+      else
+        ItemTitle.TextSettings.FontColor := TAlphaColor($FFA8ADC4);
+      ItemTitle.TextSettings.VertAlign := TTextAlign.Center;
+      ItemTitle.HitTest := False;
+
+      ItemSubTitle := TLabel.Create(Self);
+      ItemSubTitle.Parent := Item;
+      ItemSubTitle.Align := TAlignLayout.Client;
+      ItemSubTitle.Margins.Rect := RectF(10, 0, 8, 3);
+      ItemSubTitle.Text := 'content';
+      ItemSubTitle.StyledSettings := [];
+      ItemSubTitle.TextSettings.Font.Size := 11;
+      ItemSubTitle.TextSettings.FontColor := TAlphaColor($FF767B91);
+      ItemSubTitle.TextSettings.VertAlign := TTextAlign.Center;
+      ItemSubTitle.HitTest := False;
+
+      TopOffset := TopOffset + 52;
+    end);
+
+  ActiveFrame := BuildLeaf(FActiveLeaf, FRootLayout, TAlignLayout.Client, 0);
+  ActiveFrame.SetHeaderVisible(True);
+  UpdateActiveFrames;
 end;
 
 function TDockingPaneHost.BuildNode(ANode: TPaneNode; AContainer: TFmxObject;
