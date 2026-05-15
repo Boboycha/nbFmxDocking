@@ -30,6 +30,60 @@ The recent commits have stripped restate-the-code comments from every
 unit. What remains documents non-obvious *why* — FMX quirks, ownership
 invariants, deferred Free, etc. Do not re-add tutorial comments.
 
+## Latest Codex Handoff (Commit 52b865d)
+
+Last pushed commit:
+
+```text
+52b865d Add pane header actions and focus mode
+```
+
+Use it as the current baseline when checking what Cloud or another agent
+changed after Codex:
+
+```powershell
+git fetch
+git diff 52b865deecb4c6ebf31597c53253e9bf2c0c609b..origin/main
+```
+
+What changed in that commit:
+
+- `TDockingPaneContent` now owns header actions:
+  `AddHeaderAction`, `RemoveHeaderAction`, `ClearHeaderActions`,
+  `FindHeaderAction`, and `ExecuteHeaderAction`.
+- `TPaneLeafFrame` renders content-provided header actions in the pane
+  title bar. The layout is manual, not FMX `Align`, so button order stays
+  stable after caption/action changes.
+- Built-in pane header buttons now include custom content actions,
+  focus toggle (`F`), and close (`x`).
+- `TDockingPaneHost.FocusMode` was added. It does not mutate
+  `TPaneTree`; it only rebuilds the visual tree as a left sidebar with
+  all leaves plus the active leaf full-size on the right.
+- Clicking an item in the focus sidebar activates that leaf and rebuilds
+  the focus view. Toggling focus mode off restores the original split
+  layout because the underlying tree was untouched.
+- `DockingTest` demo content adds two sample header actions: `+`
+  appends `*` to the content caption, and `D` removes that demo action
+  via `RemoveHeaderAction`.
+
+Manual verification done:
+
+- `demo\DockingTest.dproj` builds successfully for Debug/Win32.
+- In `DockingTest`, custom header actions work.
+- Button order stays stable before and after action/caption changes.
+- Focus mode works: split layout -> focused active pane with sidebar ->
+  selecting another sidebar item -> returning to original split layout.
+
+Known implementation notes:
+
+- Focus mode currently lives inside one `TDockingPaneHost`; it is not yet
+  a shell-level workspace focus across multiple tab hosts/zones.
+- The focus sidebar subtitle is placeholder text (`content`). Real apps
+  should provide richer metadata later, probably via content properties or
+  an event.
+- The focus button glyph is plain text `F`; replace with an icon later
+  when the project has a real icon/style layer.
+
 ## Next iterations (in priority order)
 
 1. **`nbDocking.Shell`** — three-zone layout (sidebar | main | bottom),
