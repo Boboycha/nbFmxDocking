@@ -45,7 +45,7 @@ begin
   Host.Align := TAlignLayout.Client;
   Host.OnContentNeeded := DoNeedContent;
 
-//  Host.AddTab('Server alpha');     (* первый pane подберётся через фабрику *)
+//  Host.AddTab('Server alpha');     (* РїРµСЂРІС‹Р№ pane РїРѕРґР±РµСЂС‘С‚СЃСЏ С‡РµСЂРµР· С„Р°Р±СЂРёРєСѓ *)
 //  Host.AddTab('Server beta');
 end;
 
