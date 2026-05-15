@@ -11,7 +11,7 @@ can pick up where the previous one stopped.
 
 Completed and verified manually via the `DockingTest` demo:
 
-- `nbDocking.Types` — `TDockingPaneContent` base + events + enums.
+- `nbDocking.Types` — `TnbDockingPaneContent` base + events + enums.
 - `nbDocking.PaneTree` — pure n-ary data model (split/close/sizes).
 - `nbDocking.PaneHost` — visual rendering, leaf frames with header,
   drag of pane header, deferred destruction of clicked-on content.
@@ -23,7 +23,7 @@ Completed and verified manually via the `DockingTest` demo:
     centralised in `SyncTabCaptions`;
   - manual child layout inside `TTabButton` (no FMX `Align`),
     `Ceil`-ed widths, fallback text-width estimate.
-- `nbDocking.Demo` — `TDockingDemoPane` stub (DEBUG-only).
+- `nbDocking.Demo` — `TnbDockingDemoPane` stub (DEBUG-only).
 - `Reg_nbFMXDocking` — IDE component registration.
 
 The recent commits have stripped restate-the-code comments from every
@@ -48,7 +48,7 @@ git diff 52b865deecb4c6ebf31597c53253e9bf2c0c609b..origin/main
 
 What changed in that commit:
 
-- `TDockingPaneContent` now owns header actions:
+- `TnbDockingPaneContent` now owns header actions:
   `AddHeaderAction`, `RemoveHeaderAction`, `ClearHeaderActions`,
   `FindHeaderAction`, and `ExecuteHeaderAction`.
 - `TPaneLeafFrame` renders content-provided header actions in the pane
@@ -56,7 +56,7 @@ What changed in that commit:
   stable after caption/action changes.
 - Built-in pane header buttons now include custom content actions,
   focus toggle (`F`), and close (`x`).
-- `TDockingPaneHost.FocusMode` was added. It does not mutate
+- `TnbDockingPaneHost.FocusMode` was added. It does not mutate
   `TPaneTree`; it only rebuilds the visual tree as a left sidebar with
   all leaves plus the active leaf full-size on the right.
 - Clicking an item in the focus sidebar activates that leaf and rebuilds
@@ -76,7 +76,7 @@ Manual verification done:
 
 Known implementation notes:
 
-- Focus mode currently lives inside one `TDockingPaneHost`; it is not yet
+- Focus mode currently lives inside one `TnbDockingPaneHost`; it is not yet
   a shell-level workspace focus across multiple tab hosts/zones.
 - The focus sidebar subtitle is placeholder text (`content`). Real apps
   should provide richer metadata later, probably via content properties or
@@ -87,14 +87,14 @@ Known implementation notes:
 ## Next iterations (in priority order)
 
 1. **`nbDocking.Shell`** — three-zone layout (sidebar | main | bottom),
-   each zone hosting its own `TDockingTabHost`. Two `TSplitter`s between
+   each zone hosting its own `TnbDockingTabHost`. Two `TSplitter`s between
    zones; sidebar should be collapsible. Hook the existing per-host
    `OnContentNeeded` upward to a single shell-level factory.
 
 2. **`nbDocking.FloatWindow`** — detached panes. Hook into
-   `TDockingTabHost.PaneHeader_End`: if the drop point falls outside the
+   `TnbDockingTabHost.PaneHeader_End`: if the drop point falls outside the
    host's screen bounds, take the leaf content via `TakeLeafContent` and
-   spawn a new `TForm` with one `TDockingTabHost` showing that content.
+   spawn a new `TForm` with one `TnbDockingTabHost` showing that content.
    Mirror the same logic for `TabButton_DropOnPane` (tab drag-out).
 
 3. **`nbDocking.Persistence`** — JSON save/restore of layout.
@@ -133,7 +133,7 @@ Known implementation notes:
 These caused real bugs before; do not "fix" them.
 
 1. **`TPaneLeaf.Destroy` does NOT free its `Content`.** Owner of every
-   content is the `TDockingPaneHost` (`TComponent.Owner`), so FMX
+   content is the `TnbDockingPaneHost` (`TComponent.Owner`), so FMX
    cascade handles cleanup. The tree only holds references.
 2. **`RebuildVisualTree` calls `DetachAllContents` first** — setting
    `Parent := nil` on every live content so FMX doesn't cascade them.
@@ -167,7 +167,7 @@ These caused real bugs before; do not "fix" them.
   `System.StrUtils`.
 - `Min`/`Max`/`Ceil`/`EnsureRange` → `System.Math`.
 - `Ceil` widths/heights where subpixel layout matters.
-- Preserve `{$IFDEF DEBUG}` blocks around `TDockingDemoPane`
+- Preserve `{$IFDEF DEBUG}` blocks around `TnbDockingDemoPane`
   registration — they're load-bearing.
 
 ## Build / run

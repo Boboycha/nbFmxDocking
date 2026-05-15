@@ -2,11 +2,11 @@
 
 `nbFMXDocking` is a Delphi FireMonkey package for building tabbed, split-pane docking interfaces in FMX applications.
 
-It provides a generic tab/split/dock UI in the spirit of Termius, iTerm2, tmux, and VS Code pane splitting. The package owns the docking engine; consuming applications provide their own content by subclassing `TDockingPaneContent`.
+It provides a generic tab/split/dock UI in the spirit of Termius, iTerm2, tmux, and VS Code pane splitting. The package owns the docking engine; consuming applications provide their own content by subclassing `TnbDockingPaneContent`.
 
 ## Features
 
-- Multi-tab host component: `TDockingTabHost`
+- Multi-tab host component: `TnbDockingTabHost`
 - Split-pane tree with horizontal and vertical splits
 - Active pane tracking
 - Tab reordering by drag and drop
@@ -52,22 +52,22 @@ uses
 
 procedure TForm1.FormCreate(Sender: TObject);
 var
-  Host: TDockingTabHost;
+  Host: TnbDockingTabHost;
 begin
-  Host := TDockingTabHost.Create(Self);
+  Host := TnbDockingTabHost.Create(Self);
   Host.Parent := Self;
   Host.Align := TAlignLayout.Client;
   Host.OnContentNeeded := DoNeedContent;
 end;
 
 procedure TForm1.DoNeedContent(Sender: TObject;
-  var AContent: TDockingPaneContent);
+  var AContent: TnbDockingPaneContent);
 begin
-  AContent := TMyDockingPaneContent.Create(TDockingTabHost(Sender));
+  AContent := TMyDockingPaneContent.Create(TnbDockingTabHost(Sender));
 end;
 ```
 
-`TMyDockingPaneContent` should inherit from `TDockingPaneContent`. Content communicates with the host through events such as `RequestSplit`, `RequestClose`, and `RequestActivate`; it should not directly depend on `TDockingPaneHost` or `TDockingTabHost`.
+`TMyDockingPaneContent` should inherit from `TnbDockingPaneContent`. Content communicates with the host through events such as `RequestSplit`, `RequestClose`, and `RequestActivate`; it should not directly depend on `TnbDockingPaneHost` or `TnbDockingTabHost`.
 
 ## Source Layout
 

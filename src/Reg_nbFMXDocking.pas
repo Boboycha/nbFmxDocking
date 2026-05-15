@@ -14,10 +14,10 @@ uses
 
 procedure Register;
 begin
-  RegisterComponents('nb FMX Docking', [TDockingPaneHost]);
-  RegisterComponents('nb FMX Docking', [TDockingTabHost]);
+  RegisterComponents('nb FMX Docking', [TnbDockingPaneHost]);
+  RegisterComponents('nb FMX Docking', [TnbDockingTabHost]);
   {$IFDEF DEBUG}
-  RegisterComponents('nb FMX Docking', [TDockingDemoPane]);
+  RegisterComponents('nb FMX Docking', [TnbDockingDemoPane]);
   {$ENDIF}
 end;
 

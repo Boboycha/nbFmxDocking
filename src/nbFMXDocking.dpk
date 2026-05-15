@@ -46,10 +46,10 @@ contains
 (* План пакета по итерациям:
 
    Итерация 1 (готова):
-     [x] nbDocking.Types        — TDockingPaneContent, енумы, события
+     [x] nbDocking.Types        — TnbDockingPaneContent, енумы, события
      [x] nbDocking.PaneTree     — N-арное дерево pane-узлов
      [x] nbDocking.PaneHost     — визуальный контейнер дерева + active leaf
-     [x] nbDocking.Demo         — TDockingDemoPane для проверки движка
+     [x] nbDocking.Demo         — TnbDockingDemoPane для проверки движка
 
    Итерация 2 (текущая):
      [x] nbDocking.TabHost      — несколько PaneHost-ов как табы + drag-drop

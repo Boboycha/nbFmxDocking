@@ -1,7 +1,7 @@
-﻿unit nbDocking.Types;
+unit nbDocking.Types;
 
 (*
-  Инвариант декаплинга: TDockingPaneContent общается с хостом только
+  Инвариант декаплинга: TnbDockingPaneContent общается с хостом только
   через события (OnSplitRequest / OnCloseRequest / OnActivateRequest /
   OnHeaderChanged). Прямых ссылок на хост у контента нет — это позволяет
   использовать любой потомок (терминал, SFTP, логи) в любом контейнере.
@@ -18,14 +18,14 @@ type
   TSplitDirection = (sdLeft, sdRight, sdAbove, sdBelow);
   TPaneOrientation = (poHorizontal, poVertical);
 
-  TDockingPaneContent = class;
+  TnbDockingPaneContent = class;
 
-  TPaneSplitRequestEvent = procedure(Sender: TDockingPaneContent;
+  TPaneSplitRequestEvent = procedure(Sender: TnbDockingPaneContent;
     ADirection: TSplitDirection) of object;
-  TPaneCloseRequestEvent = procedure(Sender: TDockingPaneContent) of object;
-  TPaneActivateRequestEvent = procedure(Sender: TDockingPaneContent) of object;
-  TPaneHeaderChangedEvent = procedure(Sender: TDockingPaneContent) of object;
-  TPaneHeaderActionEvent = procedure(Sender: TDockingPaneContent;
+  TPaneCloseRequestEvent = procedure(Sender: TnbDockingPaneContent) of object;
+  TPaneActivateRequestEvent = procedure(Sender: TnbDockingPaneContent) of object;
+  TPaneHeaderChangedEvent = procedure(Sender: TnbDockingPaneContent) of object;
+  TPaneHeaderActionEvent = procedure(Sender: TnbDockingPaneContent;
     const AActionId: string) of object;
 
   TDockingPaneHeaderAction = class
@@ -44,7 +44,7 @@ type
     property OnExecute: TPaneHeaderActionEvent read FOnExecute write FOnExecute;
   end;
 
-  TDockingPaneContent = class(TLayout)
+  TnbDockingPaneContent = class(TLayout)
   private
     FCaption: string;
     FGlyph: string;
@@ -125,9 +125,9 @@ begin
   FOnExecute := AOnExecute;
 end;
 
-{ TDockingPaneContent }
+{ TnbDockingPaneContent }
 
-constructor TDockingPaneContent.Create(AOwner: TComponent);
+constructor TnbDockingPaneContent.Create(AOwner: TComponent);
 begin
   inherited;
   Align := TAlignLayout.Client;
@@ -136,43 +136,43 @@ begin
   FHeaderActions := TObjectList<TDockingPaneHeaderAction>.Create(True);
 end;
 
-destructor TDockingPaneContent.Destroy;
+destructor TnbDockingPaneContent.Destroy;
 begin
   FHeaderActions.Free;
   inherited;
 end;
 
-procedure TDockingPaneContent.Activate;
+procedure TnbDockingPaneContent.Activate;
 begin
   DoActivate;
 end;
 
-procedure TDockingPaneContent.Deactivate;
+procedure TnbDockingPaneContent.Deactivate;
 begin
   DoDeactivate;
 end;
 
-function TDockingPaneContent.CanClose: Boolean;
+function TnbDockingPaneContent.CanClose: Boolean;
 begin
   Result := True;
 end;
 
-function TDockingPaneContent.AddHeaderAction(const AId, AGlyph: string;
+function TnbDockingPaneContent.AddHeaderAction(const AId, AGlyph: string;
   AOnExecute: TPaneHeaderActionEvent;
   const AHint: string): TDockingPaneHeaderAction;
 begin
   if Trim(AId) = '' then
-    raise EDockingError.Create('TDockingPaneContent.AddHeaderAction: empty action id');
+    raise EDockingError.Create('TnbDockingPaneContent.AddHeaderAction: empty action id');
   if FindHeaderAction(AId) <> nil then
     raise EDockingError.CreateFmt(
-      'TDockingPaneContent.AddHeaderAction: duplicate action id "%s"', [AId]);
+      'TnbDockingPaneContent.AddHeaderAction: duplicate action id "%s"', [AId]);
 
   Result := TDockingPaneHeaderAction.Create(AId, AGlyph, AHint, AOnExecute);
   FHeaderActions.Add(Result);
   DoHeaderChanged;
 end;
 
-procedure TDockingPaneContent.RemoveHeaderAction(const AId: string);
+procedure TnbDockingPaneContent.RemoveHeaderAction(const AId: string);
 var
   I: Integer;
 begin
@@ -185,14 +185,14 @@ begin
     end;
 end;
 
-procedure TDockingPaneContent.ClearHeaderActions;
+procedure TnbDockingPaneContent.ClearHeaderActions;
 begin
   if FHeaderActions.Count = 0 then Exit;
   FHeaderActions.Clear;
   DoHeaderChanged;
 end;
 
-function TDockingPaneContent.FindHeaderAction(
+function TnbDockingPaneContent.FindHeaderAction(
   const AId: string): TDockingPaneHeaderAction;
 var
   I: Integer;
@@ -203,7 +203,7 @@ begin
       Exit(FHeaderActions[I]);
 end;
 
-procedure TDockingPaneContent.ExecuteHeaderAction(const AId: string);
+procedure TnbDockingPaneContent.ExecuteHeaderAction(const AId: string);
 var
   Action: TDockingPaneHeaderAction;
 begin
@@ -212,54 +212,54 @@ begin
     Action.OnExecute(Self, Action.Id);
 end;
 
-procedure TDockingPaneContent.DoActivate;
+procedure TnbDockingPaneContent.DoActivate;
 begin
 end;
 
-procedure TDockingPaneContent.DoDeactivate;
+procedure TnbDockingPaneContent.DoDeactivate;
 begin
 end;
 
-procedure TDockingPaneContent.DoHeaderChanged;
+procedure TnbDockingPaneContent.DoHeaderChanged;
 begin
   if Assigned(FOnHeaderChanged) then
     FOnHeaderChanged(Self);
 end;
 
-procedure TDockingPaneContent.SetCaption(const AValue: string);
+procedure TnbDockingPaneContent.SetCaption(const AValue: string);
 begin
   if FCaption = AValue then Exit;
   FCaption := AValue;
   DoHeaderChanged;
 end;
 
-procedure TDockingPaneContent.SetHeaderBgColor(AValue: TAlphaColor);
+procedure TnbDockingPaneContent.SetHeaderBgColor(AValue: TAlphaColor);
 begin
   if FHeaderBgColor = AValue then Exit;
   FHeaderBgColor := AValue;
   DoHeaderChanged;
 end;
 
-procedure TDockingPaneContent.SetHeaderTextColor(AValue: TAlphaColor);
+procedure TnbDockingPaneContent.SetHeaderTextColor(AValue: TAlphaColor);
 begin
   if FHeaderTextColor = AValue then Exit;
   FHeaderTextColor := AValue;
   DoHeaderChanged;
 end;
 
-procedure TDockingPaneContent.RequestSplit(ADirection: TSplitDirection);
+procedure TnbDockingPaneContent.RequestSplit(ADirection: TSplitDirection);
 begin
   if Assigned(FOnSplitRequest) then
     FOnSplitRequest(Self, ADirection);
 end;
 
-procedure TDockingPaneContent.RequestClose;
+procedure TnbDockingPaneContent.RequestClose;
 begin
   if Assigned(FOnCloseRequest) then
     FOnCloseRequest(Self);
 end;
 
-procedure TDockingPaneContent.RequestActivate;
+procedure TnbDockingPaneContent.RequestActivate;
 begin
   if Assigned(FOnActivateRequest) then
     FOnActivateRequest(Self);

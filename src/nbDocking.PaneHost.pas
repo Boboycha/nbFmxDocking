@@ -1,9 +1,9 @@
-﻿unit nbDocking.PaneHost;
+unit nbDocking.PaneHost;
 
 (*
   Инварианты владения и rebuild-а:
 
-  - Owner каждого TDockingPaneContent = PaneHost. При уничтожении хоста
+  - Owner каждого TnbDockingPaneContent = PaneHost. При уничтожении хоста
     FMX cascade подберёт и контент.
   - На любое OnChanged дерева визуал пересоздаётся целиком. Перед сносом
     старых обёрток DetachAllContents выставляет Parent := nil у живых
@@ -24,18 +24,18 @@ uses
 
 type
   TContentFactoryEvent = procedure(Sender: TObject;
-    var AContent: TDockingPaneContent) of object;
+    var AContent: TnbDockingPaneContent) of object;
   TActiveLeafChangeEvent = procedure(Sender: TObject;
     AOldLeaf, ANewLeaf: TPaneLeaf) of object;
   TContentHeaderChangeEvent = procedure(Sender: TObject;
-    AContent: TDockingPaneContent) of object;
+    AContent: TnbDockingPaneContent) of object;
 
   (* Drag заголовка pane транслируется наверх — drop-цель ищет TabHost. *)
   TPaneHeaderDragPhase = (phdStart, phdMove, phdEnd);
 
-  TDockingPaneHost = class;
+  TnbDockingPaneHost = class;
 
-  TPaneHeaderDragEvent = procedure(ASender: TDockingPaneHost; ALeaf: TPaneLeaf;
+  TPaneHeaderDragEvent = procedure(ASender: TnbDockingPaneHost; ALeaf: TPaneLeaf;
     APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF) of object;
 
   (* Какой split режет сплиттер и индекс ребёнка-соседа слева/сверху. *)
@@ -60,7 +60,7 @@ type
 
   TPaneLeafFrame = class(TRectangle)
   private
-    FHost: TDockingPaneHost;
+    FHost: TnbDockingPaneHost;
     FLeaf: TPaneLeaf;
     FHeader: TRectangle;
     FTitleLabel: TLabel;
@@ -98,7 +98,7 @@ type
     procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
       var KeyChar: Char; Shift: TShiftState);
   public
-    constructor Create(AHost: TDockingPaneHost; ALeaf: TPaneLeaf); reintroduce;
+    constructor Create(AHost: TnbDockingPaneHost; ALeaf: TPaneLeaf); reintroduce;
     destructor Destroy; override;
     procedure UpdateFromContent;
     procedure SetActive(AIsActive: Boolean);
@@ -111,7 +111,7 @@ type
     property ActionsLayout: TLayout read FActionsLayout;
   end;
 
-  TDockingPaneHost = class(TLayout)
+  TnbDockingPaneHost = class(TLayout)
   private
     FTree: TPaneTree;
     FActiveLeaf: TPaneLeaf;
@@ -130,16 +130,16 @@ type
     FFocusMode: Boolean;
 
     procedure HandleTreeChanged(Sender: TPaneTree);
-    procedure HandleContentSplitRequest(Sender: TDockingPaneContent;
+    procedure HandleContentSplitRequest(Sender: TnbDockingPaneContent;
       ADirection: TSplitDirection);
-    procedure HandleContentCloseRequest(Sender: TDockingPaneContent);
-    procedure HandleContentActivateRequest(Sender: TDockingPaneContent);
-    procedure HandleContentHeaderChanged(Sender: TDockingPaneContent);
+    procedure HandleContentCloseRequest(Sender: TnbDockingPaneContent);
+    procedure HandleContentActivateRequest(Sender: TnbDockingPaneContent);
+    procedure HandleContentHeaderChanged(Sender: TnbDockingPaneContent);
     procedure HandleSplitLayoutResize(Sender: TObject);
     procedure HandleSplitterMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
 
-    procedure WireContent(AContent: TDockingPaneContent);
+    procedure WireContent(AContent: TnbDockingPaneContent);
     procedure DetachAllContents;
     procedure RebuildVisualTree;
     procedure RebuildFocusVisualTree;
@@ -151,7 +151,7 @@ type
       AAlign: TAlignLayout; ASize: Single): TLayout;
     procedure RecalcSplitChildSizes(ASplit: TPaneSplit; ASplitLayout: TLayout);
     procedure RecalcSplitProportions(ASplit: TPaneSplit; AContainer: TLayout);
-    function FindLeafByContent(AContent: TDockingPaneContent): TPaneLeaf;
+    function FindLeafByContent(AContent: TnbDockingPaneContent): TPaneLeaf;
     function FindFrameRectFor(AContainer: TFmxObject;
       ALeaf: TPaneLeaf): TRectangle;
     procedure UpdateActiveFrames;
@@ -164,17 +164,17 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
-    procedure SetInitialContent(AContent: TDockingPaneContent);
+    procedure SetInitialContent(AContent: TnbDockingPaneContent);
     function SplitActive(ADirection: TSplitDirection;
-      ANewContent: TDockingPaneContent = nil): TPaneLeaf;
+      ANewContent: TnbDockingPaneContent = nil): TPaneLeaf;
     procedure CloseActive;
-    procedure ActivateContent(AContent: TDockingPaneContent);
+    procedure ActivateContent(AContent: TnbDockingPaneContent);
     function IsEmpty: Boolean;
 
     (* В отличие от CloseActive — контент НЕ уничтожается, лист удаляется
        из дерева; для drag-drop переноса в другой хост. *)
-    function TakeActiveContent: TDockingPaneContent;
-    function TakeLeafContent(ALeaf: TPaneLeaf): TDockingPaneContent;
+    function TakeActiveContent: TnbDockingPaneContent;
+    function TakeLeafContent(ALeaf: TPaneLeaf): TnbDockingPaneContent;
 
     procedure NotifyHeaderDrag(ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase;
       const AScreenPt: TPointF);
@@ -182,7 +182,7 @@ type
     procedure ExitFocusMode;
     procedure ToggleFocusMode;
 
-    function ActiveLeafContent: TDockingPaneContent;
+    function ActiveLeafContent: TnbDockingPaneContent;
     function ActiveLeafBounds: TRectF;
     function FindLeafAt(const APt: TPointF): TPaneLeaf;
     function LeafBounds(ALeaf: TPaneLeaf): TRectF;
@@ -226,7 +226,7 @@ type
 
 { TPaneLeafFrame }
 
-constructor TPaneLeafFrame.Create(AHost: TDockingPaneHost; ALeaf: TPaneLeaf);
+constructor TPaneLeafFrame.Create(AHost: TnbDockingPaneHost; ALeaf: TPaneLeaf);
 begin
   inherited Create(AHost);
   FHost := AHost;
@@ -326,7 +326,7 @@ begin
   FCloseGlyph := TText.Create(Self);
   FCloseGlyph.Parent := FCloseBtn;
   FCloseGlyph.Align := TAlignLayout.Client;
-  FCloseGlyph.Text := '✕';
+  FCloseGlyph.Text := 'x';
   FCloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.Font.Size := 11;
@@ -348,7 +348,7 @@ end;
 
 procedure TPaneLeafFrame.BeginRename;
 var
-  C: TDockingPaneContent;
+  C: TnbDockingPaneContent;
 begin
   if (FLeaf = nil) or (FTitleEdit = nil) then Exit;
   C := FLeaf.Content;
@@ -367,7 +367,7 @@ end;
 
 procedure TPaneLeafFrame.CommitRename;
 var
-  C: TDockingPaneContent;
+  C: TnbDockingPaneContent;
   NewCaption: string;
 begin
   if not FEditingTitle then Exit;
@@ -398,7 +398,7 @@ end;
 
 procedure TPaneLeafFrame.UpdateFromContent;
 var
-  C: TDockingPaneContent;
+  C: TnbDockingPaneContent;
 begin
   if FLeaf = nil then Exit;
   C := FLeaf.Content;
@@ -415,7 +415,7 @@ end;
 
 procedure TPaneLeafFrame.RebuildHeaderActions;
 var
-  C: TDockingPaneContent;
+  C: TnbDockingPaneContent;
   I: Integer;
   Action: TDockingPaneHeaderAction;
   ActionButton: TPaneHeaderActionButton;
@@ -539,7 +539,7 @@ end;
 procedure TPaneLeafFrame.HandleActionMouseDown(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 var
-  C: TDockingPaneContent;
+  C: TnbDockingPaneContent;
   ActionButton: TPaneHeaderActionButton;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
@@ -668,9 +668,9 @@ begin
   end;
 end;
 
-{ TDockingPaneHost }
+{ TnbDockingPaneHost }
 
-constructor TDockingPaneHost.Create(AOwner: TComponent);
+constructor TnbDockingPaneHost.Create(AOwner: TComponent);
 begin
   inherited;
   Align := TAlignLayout.Client;
@@ -691,7 +691,7 @@ begin
   FRootLayout.Align := TAlignLayout.Client;
 end;
 
-destructor TDockingPaneHost.Destroy;
+destructor TnbDockingPaneHost.Destroy;
 begin
   FSplitterInfos.Free;
   FTree.Free;
@@ -699,7 +699,7 @@ begin
   inherited;
 end;
 
-procedure TDockingPaneHost.WireContent(AContent: TDockingPaneContent);
+procedure TnbDockingPaneHost.WireContent(AContent: TnbDockingPaneContent);
 begin
   AContent.OnSplitRequest := HandleContentSplitRequest;
   AContent.OnCloseRequest := HandleContentCloseRequest;
@@ -707,8 +707,8 @@ begin
   AContent.OnHeaderChanged := HandleContentHeaderChanged;
 end;
 
-procedure TDockingPaneHost.HandleContentSplitRequest(
-  Sender: TDockingPaneContent; ADirection: TSplitDirection);
+procedure TnbDockingPaneHost.HandleContentSplitRequest(
+  Sender: TnbDockingPaneContent; ADirection: TSplitDirection);
 var
   Leaf: TPaneLeaf;
 begin
@@ -718,8 +718,8 @@ begin
   SplitActive(ADirection, nil);
 end;
 
-procedure TDockingPaneHost.HandleContentCloseRequest(
-  Sender: TDockingPaneContent);
+procedure TnbDockingPaneHost.HandleContentCloseRequest(
+  Sender: TnbDockingPaneContent);
 var
   Leaf: TPaneLeaf;
 begin
@@ -729,8 +729,8 @@ begin
   CloseActive;
 end;
 
-procedure TDockingPaneHost.HandleContentActivateRequest(
-  Sender: TDockingPaneContent);
+procedure TnbDockingPaneHost.HandleContentActivateRequest(
+  Sender: TnbDockingPaneContent);
 var
   Leaf: TPaneLeaf;
 begin
@@ -738,8 +738,8 @@ begin
   if Leaf <> nil then InternalSetActive(Leaf);
 end;
 
-procedure TDockingPaneHost.HandleContentHeaderChanged(
-  Sender: TDockingPaneContent);
+procedure TnbDockingPaneHost.HandleContentHeaderChanged(
+  Sender: TnbDockingPaneContent);
 var
   Leaf: TPaneLeaf;
   Frame: TRectangle;
@@ -754,7 +754,7 @@ begin
     FOnContentHeaderChanged(Self, Sender);
 end;
 
-procedure TDockingPaneHost.HandleTreeChanged(Sender: TPaneTree);
+procedure TnbDockingPaneHost.HandleTreeChanged(Sender: TPaneTree);
 begin
   if FFocusMode and (FTree.LeafCount <= 1) then
     FFocusMode := False;
@@ -762,12 +762,12 @@ begin
     RebuildVisualTree;
 end;
 
-procedure TDockingPaneHost.SetInitialContent(AContent: TDockingPaneContent);
+procedure TnbDockingPaneHost.SetInitialContent(AContent: TnbDockingPaneContent);
 begin
   if FTree.Root <> nil then
-    raise EDockingError.Create('TDockingPaneHost.SetInitialContent: tree is not empty');
+    raise EDockingError.Create('TnbDockingPaneHost.SetInitialContent: tree is not empty');
   if AContent = nil then
-    raise EDockingError.Create('TDockingPaneHost.SetInitialContent: nil content');
+    raise EDockingError.Create('TnbDockingPaneHost.SetInitialContent: nil content');
 
   if AContent.Owner <> Self then
     InsertComponent(AContent);
@@ -778,8 +778,8 @@ begin
   InternalSetActive(FTree.FirstLeaf);
 end;
 
-function TDockingPaneHost.SplitActive(ADirection: TSplitDirection;
-  ANewContent: TDockingPaneContent): TPaneLeaf;
+function TnbDockingPaneHost.SplitActive(ADirection: TSplitDirection;
+  ANewContent: TnbDockingPaneContent): TPaneLeaf;
 var
   NewLeaf: TPaneLeaf;
 begin
@@ -803,10 +803,10 @@ begin
   InternalSetActive(NewLeaf);
 end;
 
-procedure TDockingPaneHost.CloseActive;
+procedure TnbDockingPaneHost.CloseActive;
 var
   ToClose: TPaneLeaf;
-  ToCloseContent: TDockingPaneContent;
+  ToCloseContent: TnbDockingPaneContent;
 begin
   if FActiveLeaf = nil then Exit;
   ToClose := FActiveLeaf;
@@ -826,7 +826,7 @@ begin
 
   FTree.CloseLeaf(ToClose);
 
-  (* Free контента откладываем: мы внутри стека OnClick кнопки "✕",
+  (* Free контента откладываем: мы внутри стека OnClick кнопки "x",
      которая является потомком ToCloseContent. Синхронный Free убьёт
      кнопку, FMX вернётся в TButton.Click → AV. *)
   if ToCloseContent <> nil then
@@ -844,7 +844,7 @@ begin
     FOnActiveLeafChanged(Self, nil, nil);
 end;
 
-procedure TDockingPaneHost.ActivateContent(AContent: TDockingPaneContent);
+procedure TnbDockingPaneHost.ActivateContent(AContent: TnbDockingPaneContent);
 var
   Leaf: TPaneLeaf;
 begin
@@ -852,12 +852,12 @@ begin
   if Leaf <> nil then InternalSetActive(Leaf);
 end;
 
-function TDockingPaneHost.IsEmpty: Boolean;
+function TnbDockingPaneHost.IsEmpty: Boolean;
 begin
   Result := FTree.Root = nil;
 end;
 
-function TDockingPaneHost.ActiveLeafContent: TDockingPaneContent;
+function TnbDockingPaneHost.ActiveLeafContent: TnbDockingPaneContent;
 begin
   if FActiveLeaf <> nil then
     Result := FActiveLeaf.Content
@@ -865,7 +865,7 @@ begin
     Result := nil;
 end;
 
-function TDockingPaneHost.TakeActiveContent: TDockingPaneContent;
+function TnbDockingPaneHost.TakeActiveContent: TnbDockingPaneContent;
 var
   ToClose: TPaneLeaf;
 begin
@@ -888,12 +888,12 @@ begin
     FOnActiveLeafChanged(Self, nil, nil);
 end;
 
-function TDockingPaneHost.ActiveLeafBounds: TRectF;
+function TnbDockingPaneHost.ActiveLeafBounds: TRectF;
 begin
   Result := LeafBounds(FActiveLeaf);
 end;
 
-function TDockingPaneHost.TakeLeafContent(ALeaf: TPaneLeaf): TDockingPaneContent;
+function TnbDockingPaneHost.TakeLeafContent(ALeaf: TPaneLeaf): TnbDockingPaneContent;
 begin
   if ALeaf = nil then Exit(nil);
   if ALeaf <> FActiveLeaf then
@@ -901,7 +901,7 @@ begin
   Result := TakeActiveContent;
 end;
 
-procedure TDockingPaneHost.NotifyHeaderDrag(ALeaf: TPaneLeaf;
+procedure TnbDockingPaneHost.NotifyHeaderDrag(ALeaf: TPaneLeaf;
   APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
 begin
   if FFocusMode then Exit;
@@ -909,22 +909,22 @@ begin
     FOnHeaderDrag(Self, ALeaf, APhase, AScreenPt);
 end;
 
-procedure TDockingPaneHost.EnterFocusMode;
+procedure TnbDockingPaneHost.EnterFocusMode;
 begin
   FocusMode := True;
 end;
 
-procedure TDockingPaneHost.ExitFocusMode;
+procedure TnbDockingPaneHost.ExitFocusMode;
 begin
   FocusMode := False;
 end;
 
-procedure TDockingPaneHost.ToggleFocusMode;
+procedure TnbDockingPaneHost.ToggleFocusMode;
 begin
   FocusMode := not FFocusMode;
 end;
 
-procedure TDockingPaneHost.SetFocusMode(AValue: Boolean);
+procedure TnbDockingPaneHost.SetFocusMode(AValue: Boolean);
 begin
   if AValue and (FTree.LeafCount <= 1) then
     AValue := False;
@@ -934,7 +934,7 @@ begin
   RebuildVisualTree;
 end;
 
-procedure TDockingPaneHost.HandleFocusItemMouseDown(Sender: TObject;
+procedure TnbDockingPaneHost.HandleFocusItemMouseDown(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 var
   Item: TPaneFocusItem;
@@ -949,7 +949,7 @@ begin
   RebuildVisualTree;
 end;
 
-function TDockingPaneHost.LeafBounds(ALeaf: TPaneLeaf): TRectF;
+function TnbDockingPaneHost.LeafBounds(ALeaf: TPaneLeaf): TRectF;
 var
   Rect: TRectangle;
   Pt1, Pt2: TPointF;
@@ -967,7 +967,7 @@ begin
   Result := RectF(Pt1.X, Pt1.Y, Pt2.X, Pt2.Y);
 end;
 
-function TDockingPaneHost.FindLeafAt(const APt: TPointF): TPaneLeaf;
+function TnbDockingPaneHost.FindLeafAt(const APt: TPointF): TPaneLeaf;
 var
   Found: TPaneLeaf;
 begin
@@ -988,7 +988,7 @@ begin
   Result := Found;
 end;
 
-function TDockingPaneHost.FindFrameRectFor(
+function TnbDockingPaneHost.FindFrameRectFor(
   AContainer: TFmxObject; ALeaf: TPaneLeaf): TRectangle;
 var
   I: Integer;
@@ -1008,12 +1008,12 @@ begin
   end;
 end;
 
-procedure TDockingPaneHost.SetActiveLeaf(AValue: TPaneLeaf);
+procedure TnbDockingPaneHost.SetActiveLeaf(AValue: TPaneLeaf);
 begin
   InternalSetActive(AValue);
 end;
 
-procedure TDockingPaneHost.InternalSetActive(ALeaf: TPaneLeaf);
+procedure TnbDockingPaneHost.InternalSetActive(ALeaf: TPaneLeaf);
 var
   OldLeaf: TPaneLeaf;
 begin
@@ -1034,8 +1034,8 @@ begin
     FOnActiveLeafChanged(Self, OldLeaf, FActiveLeaf);
 end;
 
-function TDockingPaneHost.FindLeafByContent(
-  AContent: TDockingPaneContent): TPaneLeaf;
+function TnbDockingPaneHost.FindLeafByContent(
+  AContent: TnbDockingPaneContent): TPaneLeaf;
 var
   Found: TPaneLeaf;
 begin
@@ -1049,7 +1049,7 @@ begin
   Result := Found;
 end;
 
-procedure TDockingPaneHost.DetachAllContents;
+procedure TnbDockingPaneHost.DetachAllContents;
 begin
   FTree.EnumerateLeaves(
     procedure(ALeaf: TPaneLeaf)
@@ -1059,7 +1059,7 @@ begin
     end);
 end;
 
-procedure TDockingPaneHost.RebuildVisualTree;
+procedure TnbDockingPaneHost.RebuildVisualTree;
 
   procedure ApplyHeaderVisibility(AContainer: TFmxObject; AVisible: Boolean);
   var
@@ -1109,7 +1109,7 @@ begin
   end;
 end;
 
-procedure TDockingPaneHost.RebuildFocusVisualTree;
+procedure TnbDockingPaneHost.RebuildFocusVisualTree;
 var
   Sidebar: TLayout;
   SidebarBg: TRectangle;
@@ -1213,7 +1213,7 @@ begin
   UpdateActiveFrames;
 end;
 
-function TDockingPaneHost.BuildNode(ANode: TPaneNode; AContainer: TFmxObject;
+function TnbDockingPaneHost.BuildNode(ANode: TPaneNode; AContainer: TFmxObject;
   AAlign: TAlignLayout; ASize: Single): TFmxObject;
 begin
   if ANode is TPaneLeaf then
@@ -1222,7 +1222,7 @@ begin
     Result := BuildSplit(TPaneSplit(ANode), AContainer, AAlign, ASize);
 end;
 
-function TDockingPaneHost.BuildLeaf(ALeaf: TPaneLeaf; AContainer: TFmxObject;
+function TnbDockingPaneHost.BuildLeaf(ALeaf: TPaneLeaf; AContainer: TFmxObject;
   AAlign: TAlignLayout; ASize: Single): TPaneLeafFrame;
 var
   Frame: TPaneLeafFrame;
@@ -1243,7 +1243,7 @@ begin
   Result := Frame;
 end;
 
-function TDockingPaneHost.BuildSplit(ASplit: TPaneSplit; AContainer: TFmxObject;
+function TnbDockingPaneHost.BuildSplit(ASplit: TPaneSplit; AContainer: TFmxObject;
   AAlign: TAlignLayout; ASize: Single): TLayout;
 var
   SplitLayout: TLayout;
@@ -1325,7 +1325,7 @@ begin
   Result := SplitLayout;
 end;
 
-procedure TDockingPaneHost.HandleSplitLayoutResize(Sender: TObject);
+procedure TnbDockingPaneHost.HandleSplitLayoutResize(Sender: TObject);
 var
   SplitLayout: TLayout;
   ASplit: TPaneSplit;
@@ -1338,7 +1338,7 @@ begin
   RecalcSplitChildSizes(ASplit, SplitLayout);
 end;
 
-procedure TDockingPaneHost.RecalcSplitChildSizes(ASplit: TPaneSplit;
+procedure TnbDockingPaneHost.RecalcSplitChildSizes(ASplit: TPaneSplit;
   ASplitLayout: TLayout);
 var
   I: Integer;
@@ -1383,7 +1383,7 @@ begin
   end;
 end;
 
-procedure TDockingPaneHost.HandleSplitterMouseUp(Sender: TObject;
+procedure TnbDockingPaneHost.HandleSplitterMouseUp(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 var
   Splitter: TSplitter;
@@ -1398,7 +1398,7 @@ begin
   RecalcSplitProportions(Info.Split, TLayout(Splitter.Parent));
 end;
 
-procedure TDockingPaneHost.RecalcSplitProportions(ASplit: TPaneSplit;
+procedure TnbDockingPaneHost.RecalcSplitProportions(ASplit: TPaneSplit;
   AContainer: TLayout);
 var
   I, ChildIdx: Integer;
@@ -1437,7 +1437,7 @@ begin
     ASplit.SetSize(I, Sizes[I]);
 end;
 
-procedure TDockingPaneHost.UpdateActiveFrames;
+procedure TnbDockingPaneHost.UpdateActiveFrames;
 
   procedure ApplyTo(AContainer: TFmxObject);
   var

@@ -1,4 +1,4 @@
-﻿unit nbDocking.PaneTree;
+unit nbDocking.PaneTree;
 
 (*
   N-арное дерево panes. Ключевые инварианты:
@@ -9,8 +9,8 @@
   - Close с одним оставшимся ребёнком схлопывает split в этого ребёнка,
     каскадно вверх.
   - Sizes — нормализованные доли, сумма = 1.0, диапазон [0.05, 0.95].
-  - TDockingPaneContent дерево НЕ владеет — только ссылки. Освобождением
-    занимается визуальный слой (TDockingPaneHost через TComponent.Owner).
+  - TnbDockingPaneContent дерево НЕ владеет — только ссылки. Освобождением
+    занимается визуальный слой (TnbDockingPaneHost через TComponent.Owner).
 *)
 
 interface
@@ -40,12 +40,12 @@ type
 
   TPaneLeaf = class(TPaneNode)
   private
-    FContent: TDockingPaneContent;
+    FContent: TnbDockingPaneContent;
   public
-    constructor Create(AOwnerTree: TPaneTree; AContent: TDockingPaneContent);
+    constructor Create(AOwnerTree: TPaneTree; AContent: TnbDockingPaneContent);
     destructor Destroy; override;
     function IsLeaf: Boolean; override;
-    property Content: TDockingPaneContent read FContent;
+    property Content: TnbDockingPaneContent read FContent;
   end;
 
   TPaneSplit = class(TPaneNode)
@@ -89,9 +89,9 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    function SetRootContent(AContent: TDockingPaneContent): TPaneLeaf;
+    function SetRootContent(AContent: TnbDockingPaneContent): TPaneLeaf;
     function SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
-      ANewContent: TDockingPaneContent): TPaneLeaf;
+      ANewContent: TnbDockingPaneContent): TPaneLeaf;
     procedure CloseLeaf(ALeaf: TPaneLeaf);
 
     function FirstLeaf: TPaneLeaf;
@@ -130,7 +130,7 @@ end;
 
 { TPaneLeaf }
 
-constructor TPaneLeaf.Create(AOwnerTree: TPaneTree; AContent: TDockingPaneContent);
+constructor TPaneLeaf.Create(AOwnerTree: TPaneTree; AContent: TnbDockingPaneContent);
 begin
   inherited Create(AOwnerTree);
   FContent := AContent;
@@ -336,7 +336,7 @@ begin
   Result := ADir in [sdLeft, sdAbove];
 end;
 
-function TPaneTree.SetRootContent(AContent: TDockingPaneContent): TPaneLeaf;
+function TPaneTree.SetRootContent(AContent: TnbDockingPaneContent): TPaneLeaf;
 begin
   if FRoot <> nil then
     raise EDockingError.Create('TPaneTree.SetRootContent: tree is not empty');
@@ -349,7 +349,7 @@ begin
 end;
 
 function TPaneTree.SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
-  ANewContent: TDockingPaneContent): TPaneLeaf;
+  ANewContent: TnbDockingPaneContent): TPaneLeaf;
 var
   TargetOrient: TPaneOrientation;
   InsertBefore: Boolean;

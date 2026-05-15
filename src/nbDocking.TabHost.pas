@@ -1,4 +1,4 @@
-﻿unit nbDocking.TabHost;
+unit nbDocking.TabHost;
 
 (*
   Инвариант: закрытие таба, инициированное изнутри его же стека вызова
@@ -33,7 +33,7 @@ const
   TAB_CLOSE_HOVER_COLOR       = TAlphaColor($30000000);
 
 type
-  TDockingTabHost = class;
+  TnbDockingTabHost = class;
   TTabButton = class;
 
   (* Не TComponent — временем жизни управляет TObjectList FTabs у TabHost. *)
@@ -42,21 +42,21 @@ type
     FCaption: string;
     FGlyph: string;
     FDirty: Boolean;
-    FPaneHost: TDockingPaneHost;
-    FOwner: TDockingTabHost;
+    FPaneHost: TnbDockingPaneHost;
+    FOwner: TnbDockingTabHost;
     FButton: TTabButton;
     FCustomGroupCaption: Boolean;
     procedure SetCaption(const AValue: string);
     procedure SetDirty(AValue: Boolean);
   public
-    constructor Create(AOwner: TDockingTabHost; const ACaption: string);
+    constructor Create(AOwner: TnbDockingTabHost; const ACaption: string);
     destructor Destroy; override;
 
     property Caption: string read FCaption write SetCaption;
     property Glyph: string read FGlyph write FGlyph;
     property Dirty: Boolean read FDirty write SetDirty;
-    property PaneHost: TDockingPaneHost read FPaneHost;
-    property Owner: TDockingTabHost read FOwner;
+    property PaneHost: TnbDockingPaneHost read FPaneHost;
+    property Owner: TnbDockingTabHost read FOwner;
     property CustomGroupCaption: Boolean read FCustomGroupCaption
       write FCustomGroupCaption;
 
@@ -121,7 +121,7 @@ type
     property Tab: TDockingTab read FTab;
   end;
 
-  TDockingTabHost = class(TLayout)
+  TnbDockingTabHost = class(TLayout)
   private
     FTabs: TObjectList<TDockingTab>;
     FActiveTab: TDockingTab;
@@ -140,7 +140,7 @@ type
     FCurrentDropLeaf: TPaneLeaf;
 
     (* Drag заголовка pane: TabBar → новый таб, площадь pane → split. *)
-    FHeaderDragSourceHost: TDockingPaneHost;
+    FHeaderDragSourceHost: TnbDockingPaneHost;
     FHeaderDragSourceLeaf: TPaneLeaf;
     FHeaderDragOverTabBar: Boolean;
 
@@ -167,20 +167,20 @@ type
     procedure HandlePaneHostActiveLeafChanged(Sender: TObject;
       AOldLeaf, ANewLeaf: TPaneLeaf);
     procedure HandlePaneHostContentHeaderChanged(Sender: TObject;
-      AContent: TDockingPaneContent);
+      AContent: TnbDockingPaneContent);
     procedure HandlePaneHostContentNeeded(Sender: TObject;
-      var AContent: TDockingPaneContent);
+      var AContent: TnbDockingPaneContent);
     procedure HandleDeferTimer(Sender: TObject);
 
     procedure RelayoutTabButtons;
     procedure UpdateTabButtonWidths;
     procedure InternalActivateTab(ATab: TDockingTab);
-    function FindTabByPaneHost(APaneHost: TDockingPaneHost): TDockingTab;
+    function FindTabByPaneHost(APaneHost: TnbDockingPaneHost): TDockingTab;
     function IndexOfTab(ATab: TDockingTab): Integer;
     function CanCloseTabInternal(ATab: TDockingTab): Boolean;
-    function CaptionForContent(AContent: TDockingPaneContent;
+    function CaptionForContent(AContent: TnbDockingPaneContent;
       const AFallback: string): string;
-    procedure EnsureContentCaption(AContent: TDockingPaneContent;
+    procedure EnsureContentCaption(AContent: TnbDockingPaneContent;
       const AFallback: string);
     procedure SyncTabCaptions;
     procedure ScheduleDeferredCloseTab(ATab: TDockingTab);
@@ -208,9 +208,9 @@ type
     procedure PerformDockMove(ASourceTab, ATargetTab: TDockingTab;
       ADir: TSplitDirection);
 
-    procedure HandlePaneHostHeaderDrag(ASender: TDockingPaneHost;
+    procedure HandlePaneHostHeaderDrag(ASender: TnbDockingPaneHost;
       ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
-    procedure PaneHeader_Begin(ASourceHost: TDockingPaneHost;
+    procedure PaneHeader_Begin(ASourceHost: TnbDockingPaneHost;
       ASourceLeaf: TPaneLeaf);
     procedure PaneHeader_Update(const AScreenPt: TPointF);
     procedure PaneHeader_End(const AScreenPt: TPointF);
@@ -224,7 +224,7 @@ type
 
     (* В отличие от AddTab — OnContentNeeded не вызывается. *)
     function AddTabWithContent(const ACaption: string;
-      AContent: TDockingPaneContent): TDockingTab;
+      AContent: TnbDockingPaneContent): TDockingTab;
 
     procedure CloseTab(ATab: TDockingTab);
     procedure CloseOtherTabs(ATab: TDockingTab);
@@ -260,14 +260,14 @@ implementation
 
 { TDockingTab }
 
-constructor TDockingTab.Create(AOwner: TDockingTabHost; const ACaption: string);
+constructor TDockingTab.Create(AOwner: TnbDockingTabHost; const ACaption: string);
 begin
   inherited Create;
   FOwner := AOwner;
   FCaption := ACaption;
   FDirty := False;
   FCustomGroupCaption := False;
-  FPaneHost := TDockingPaneHost.Create(AOwner);
+  FPaneHost := TnbDockingPaneHost.Create(AOwner);
   FPaneHost.Parent := AOwner.FContentArea;
   FPaneHost.Align := TAlignLayout.Client;
   FPaneHost.Visible := False;
@@ -347,12 +347,12 @@ begin
   FCaptionEdit.OnExit := HandleEditExit;
   FCaptionEdit.OnKeyDown := HandleEditKeyDown;
 
-  (* Glyph ▦ обозначает группу — drag в split-зону для таких табов отключён. *)
+  (* Glyph # обозначает группу — drag в split-зону для таких табов отключён. *)
   FGroupGlyph := TText.Create(Self);
   FGroupGlyph.Parent := Self;
   FGroupGlyph.Align := TAlignLayout.None;
   FGroupGlyph.Width := 0;
-  FGroupGlyph.Text := '▦';
+  FGroupGlyph.Text := '#';
   FGroupGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FGroupGlyph.TextSettings.VertAlign := TTextAlign.Center;
   FGroupGlyph.TextSettings.Font.Size := 12;
@@ -375,7 +375,7 @@ begin
   FCloseGlyph := TText.Create(Self);
   FCloseGlyph.Parent := FCloseBtn;
   FCloseGlyph.Align := TAlignLayout.Client;
-  FCloseGlyph.Text := '✕';
+  FCloseGlyph.Text := 'x';
   FCloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.Font.Size := 11;
@@ -413,7 +413,7 @@ end;
 
 procedure TTabButton.CommitRename;
 var
-  Content: TDockingPaneContent;
+  Content: TnbDockingPaneContent;
   NewCaption: string;
 begin
   if not FEditingCaption then Exit;
@@ -591,7 +591,7 @@ end;
 
 procedure TTabButton.UpdateVisual(AIsActive: Boolean);
 var
-  Host: TDockingTabHost;
+  Host: TnbDockingTabHost;
 begin
   if FTab = nil then Exit;
   Host := FTab.Owner;
@@ -642,7 +642,7 @@ procedure TTabButton.HandleMouseMove(Sender: TObject; Shift: TShiftState;
   X, Y: Single);
 var
   ScreenPt, HostPt: TPointF;
-  Host: TDockingTabHost;
+  Host: TnbDockingTabHost;
   IsOutsideTabBar: Boolean;
 begin
   if FDragState = dsIdle then Exit;
@@ -698,7 +698,7 @@ procedure TTabButton.HandleMouseUp(Sender: TObject; Button: TMouseButton;
 var
   ScreenPt: TPointF;
   PrevState: TTabDragState;
-  Host: TDockingTabHost;
+  Host: TnbDockingTabHost;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   if FTab = nil then Exit;
@@ -798,9 +798,9 @@ begin
   end;
 end;
 
-{ TDockingTabHost }
+{ TnbDockingTabHost }
 
-constructor TDockingTabHost.Create(AOwner: TComponent);
+constructor TnbDockingTabHost.Create(AOwner: TComponent);
 begin
   inherited;
   Align := TAlignLayout.Client;
@@ -827,7 +827,7 @@ begin
   FDeferTimer.OnTimer := HandleDeferTimer;
 end;
 
-destructor TDockingTabHost.Destroy;
+destructor TnbDockingTabHost.Destroy;
 begin
   if FDeferTimer <> nil then
     FDeferTimer.Enabled := False;
@@ -841,7 +841,7 @@ begin
   inherited;
 end;
 
-procedure TDockingTabHost.BuildUI;
+procedure TnbDockingTabHost.BuildUI;
 begin
   (* FTabBar — TLayout, а не TRectangle: у TRectangle родителя дети с
      Align=Left вставляются не в конец, а на индекс 1. Цветной фон —
@@ -901,32 +901,32 @@ begin
   FContentArea.Align := TAlignLayout.Client;
 end;
 
-procedure TDockingTabHost.HandleTabBarResize(Sender: TObject);
+procedure TnbDockingTabHost.HandleTabBarResize(Sender: TObject);
 begin
   UpdateTabButtonWidths;
 end;
 
-procedure TDockingTabHost.HandleAddButtonClick(Sender: TObject;
+procedure TnbDockingTabHost.HandleAddButtonClick(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   AddTab('New tab ' + (FTabs.Count + 1).ToString);
 end;
 
-procedure TDockingTabHost.HandleAddButtonMouseEnter(Sender: TObject);
+procedure TnbDockingTabHost.HandleAddButtonMouseEnter(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.Solid;
   FAddButton.Fill.Color := TAB_CLOSE_HOVER_COLOR;
 end;
 
-procedure TDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);
+procedure TnbDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.None;
 end;
 
-procedure TDockingTabHost.ScheduleDeferredCloseTab(ATab: TDockingTab);
+procedure TnbDockingTabHost.ScheduleDeferredCloseTab(ATab: TDockingTab);
 begin
   if ATab = nil then Exit;
   if FPendingCloseTabs.IndexOf(ATab) >= 0 then Exit;
@@ -935,7 +935,7 @@ begin
     FDeferTimer.Enabled := True;
 end;
 
-procedure TDockingTabHost.HandleDeferTimer(Sender: TObject);
+procedure TnbDockingTabHost.HandleDeferTimer(Sender: TObject);
 var
   Tab: TDockingTab;
 begin
@@ -952,11 +952,11 @@ begin
   end;
 end;
 
-function TDockingTabHost.AddTab(const ACaption: string): TDockingTab;
+function TnbDockingTabHost.AddTab(const ACaption: string): TDockingTab;
 var
   NewTab: TDockingTab;
   Btn: TTabButton;
-  InitialContent: TDockingPaneContent;
+  InitialContent: TnbDockingPaneContent;
 begin
   NewTab := TDockingTab.Create(Self, ACaption);
   FTabs.Add(NewTab);
@@ -989,8 +989,8 @@ begin
   Result := NewTab;
 end;
 
-function TDockingTabHost.AddTabWithContent(const ACaption: string;
-  AContent: TDockingPaneContent): TDockingTab;
+function TnbDockingTabHost.AddTabWithContent(const ACaption: string;
+  AContent: TnbDockingPaneContent): TDockingTab;
 var
   NewTab: TDockingTab;
   Btn: TTabButton;
@@ -1023,7 +1023,7 @@ begin
   Result := NewTab;
 end;
 
-procedure TDockingTabHost.CloseTab(ATab: TDockingTab);
+procedure TnbDockingTabHost.CloseTab(ATab: TDockingTab);
 var
   Idx, NewActiveIdx: Integer;
   CanClose: Boolean;
@@ -1076,7 +1076,7 @@ begin
   InternalActivateTab(NextActive);
 end;
 
-procedure TDockingTabHost.CloseOtherTabs(ATab: TDockingTab);
+procedure TnbDockingTabHost.CloseOtherTabs(ATab: TDockingTab);
 var
   I: Integer;
   Tab: TDockingTab;
@@ -1092,12 +1092,12 @@ begin
   end;
 end;
 
-procedure TDockingTabHost.ActivateTab(ATab: TDockingTab);
+procedure TnbDockingTabHost.ActivateTab(ATab: TDockingTab);
 begin
   InternalActivateTab(ATab);
 end;
 
-procedure TDockingTabHost.MoveTab(ATab: TDockingTab; ANewIndex: Integer);
+procedure TnbDockingTabHost.MoveTab(ATab: TDockingTab; ANewIndex: Integer);
 var
   CurIdx: Integer;
 begin
@@ -1117,17 +1117,17 @@ begin
   RelayoutTabButtons;
 end;
 
-function TDockingTabHost.TabCount: Integer;
+function TnbDockingTabHost.TabCount: Integer;
 begin
   Result := FTabs.Count;
 end;
 
-function TDockingTabHost.GetTab(AIndex: Integer): TDockingTab;
+function TnbDockingTabHost.GetTab(AIndex: Integer): TDockingTab;
 begin
   Result := FTabs[AIndex];
 end;
 
-procedure TDockingTabHost.InternalActivateTab(ATab: TDockingTab);
+procedure TnbDockingTabHost.InternalActivateTab(ATab: TDockingTab);
 var
   Old: TDockingTab;
   I: Integer;
@@ -1158,7 +1158,7 @@ begin
     FOnActiveTabChanged(Self, Old, FActiveTab);
 end;
 
-procedure TDockingTabHost.RelayoutTabButtons;
+procedure TnbDockingTabHost.RelayoutTabButtons;
 var
   I: Integer;
   Btn: TTabButton;
@@ -1194,7 +1194,7 @@ begin
   UpdateTabButtonWidths;
 end;
 
-procedure TDockingTabHost.UpdateTabButtonWidths;
+procedure TnbDockingTabHost.UpdateTabButtonWidths;
 var
   I, MaxIdx: Integer;
   DesiredTotal, AvailableWidth, Excess, Shrink: Single;
@@ -1265,8 +1265,8 @@ begin
   end;
 end;
 
-function TDockingTabHost.FindTabByPaneHost(
-  APaneHost: TDockingPaneHost): TDockingTab;
+function TnbDockingTabHost.FindTabByPaneHost(
+  APaneHost: TnbDockingPaneHost): TDockingTab;
 var
   I: Integer;
 begin
@@ -1276,7 +1276,7 @@ begin
       Exit(FTabs[I]);
 end;
 
-function TDockingTabHost.IndexOfTab(ATab: TDockingTab): Integer;
+function TnbDockingTabHost.IndexOfTab(ATab: TDockingTab): Integer;
 var
   I: Integer;
 begin
@@ -1286,7 +1286,7 @@ begin
       Exit(I);
 end;
 
-function TDockingTabHost.CaptionForContent(AContent: TDockingPaneContent;
+function TnbDockingTabHost.CaptionForContent(AContent: TnbDockingPaneContent;
   const AFallback: string): string;
 begin
   Result := '';
@@ -1298,7 +1298,7 @@ begin
     Result := 'New tab';
 end;
 
-procedure TDockingTabHost.EnsureContentCaption(AContent: TDockingPaneContent;
+procedure TnbDockingTabHost.EnsureContentCaption(AContent: TnbDockingPaneContent;
   const AFallback: string);
 begin
   if AContent = nil then Exit;
@@ -1306,11 +1306,11 @@ begin
     AContent.Caption := CaptionForContent(AContent, AFallback);
 end;
 
-procedure TDockingTabHost.SyncTabCaptions;
+procedure TnbDockingTabHost.SyncTabCaptions;
 var
   I, GroupCount, GroupIdx: Integer;
   Tab: TDockingTab;
-  Content: TDockingPaneContent;
+  Content: TnbDockingPaneContent;
 begin
   GroupCount := 0;
   for I := 0 to FTabs.Count - 1 do
@@ -1346,7 +1346,7 @@ begin
   end;
 end;
 
-function TDockingTabHost.CanCloseTabInternal(ATab: TDockingTab): Boolean;
+function TnbDockingTabHost.CanCloseTabInternal(ATab: TDockingTab): Boolean;
 var
   AllOk: Boolean;
 begin
@@ -1362,14 +1362,14 @@ begin
   Result := AllOk;
 end;
 
-procedure TDockingTabHost.HandlePaneHostActiveLeafChanged(Sender: TObject;
+procedure TnbDockingTabHost.HandlePaneHostActiveLeafChanged(Sender: TObject;
   AOldLeaf, ANewLeaf: TPaneLeaf);
 var
-  Host: TDockingPaneHost;
+  Host: TnbDockingPaneHost;
   Tab: TDockingTab;
 begin
-  if not (Sender is TDockingPaneHost) then Exit;
-  Host := TDockingPaneHost(Sender);
+  if not (Sender is TnbDockingPaneHost) then Exit;
+  Host := TnbDockingPaneHost(Sender);
 
   Tab := FindTabByPaneHost(Host);
   SyncTabCaptions;
@@ -1386,14 +1386,14 @@ begin
     ScheduleDeferredCloseTab(Tab);
 end;
 
-procedure TDockingTabHost.HandlePaneHostContentHeaderChanged(Sender: TObject;
-  AContent: TDockingPaneContent);
+procedure TnbDockingTabHost.HandlePaneHostContentHeaderChanged(Sender: TObject;
+  AContent: TnbDockingPaneContent);
 var
-  Host: TDockingPaneHost;
+  Host: TnbDockingPaneHost;
   Tab: TDockingTab;
 begin
-  if not (Sender is TDockingPaneHost) then Exit;
-  Host := TDockingPaneHost(Sender);
+  if not (Sender is TnbDockingPaneHost) then Exit;
+  Host := TnbDockingPaneHost(Sender);
   Tab := FindTabByPaneHost(Host);
   if Tab = nil then Exit;
 
@@ -1407,8 +1407,8 @@ begin
   end;
 end;
 
-procedure TDockingTabHost.HandlePaneHostContentNeeded(Sender: TObject;
-  var AContent: TDockingPaneContent);
+procedure TnbDockingTabHost.HandlePaneHostContentNeeded(Sender: TObject;
+  var AContent: TnbDockingPaneContent);
 var
   Tab: TDockingTab;
 begin
@@ -1416,19 +1416,19 @@ begin
     FOnContentNeeded(Self, AContent);
   if AContent = nil then Exit;
 
-  Tab := FindTabByPaneHost(TDockingPaneHost(Sender));
+  Tab := FindTabByPaneHost(TnbDockingPaneHost(Sender));
   if Tab <> nil then
     EnsureContentCaption(AContent, Tab.Caption)
   else
     EnsureContentCaption(AContent, 'New tab');
 end;
 
-procedure TDockingTabHost.TabButton_Activate(ATab: TDockingTab);
+procedure TnbDockingTabHost.TabButton_Activate(ATab: TDockingTab);
 begin
   InternalActivateTab(ATab);
 end;
 
-function TDockingTabHost.TabButton_Click(ATab: TDockingTab;
+function TnbDockingTabHost.TabButton_Click(ATab: TDockingTab;
   Button: TMouseButton; Shift: TShiftState;
   const AScreenPt: TPointF): Boolean;
 begin
@@ -1437,18 +1437,18 @@ begin
     FOnTabClick(Self, ATab, Button, Shift, AScreenPt, Result);
 end;
 
-procedure TDockingTabHost.TabButton_RequestClose(ATab: TDockingTab);
+procedure TnbDockingTabHost.TabButton_RequestClose(ATab: TDockingTab);
 begin
   CloseTab(ATab);
 end;
 
-procedure TDockingTabHost.TabButton_StartDrag(AButton: TTabButton);
+procedure TnbDockingTabHost.TabButton_StartDrag(AButton: TTabButton);
 begin
   FDropIndicator.Visible := True;
   FDropIndicator.BringToFront;
 end;
 
-procedure TDockingTabHost.TabButton_UpdateDrag(AButton: TTabButton;
+procedure TnbDockingTabHost.TabButton_UpdateDrag(AButton: TTabButton;
   AScreenX: Single);
 var
   LocalX: Single;
@@ -1491,7 +1491,7 @@ begin
   FDropIndicator.Visible := True;
 end;
 
-procedure TDockingTabHost.TabButton_EndDrag(AButton: TTabButton;
+procedure TnbDockingTabHost.TabButton_EndDrag(AButton: TTabButton;
   AScreenX: Single; AWasDragging: Boolean);
 var
   LocalX: Single;
@@ -1512,7 +1512,7 @@ begin
   MoveTab(AButton.Tab, TargetIdx);
 end;
 
-function TDockingTabHost.TabBarLocalX(AScreenX: Single): Single;
+function TnbDockingTabHost.TabBarLocalX(AScreenX: Single): Single;
 var
   Pt: TPointF;
 begin
@@ -1520,7 +1520,7 @@ begin
   Result := Pt.X;
 end;
 
-function TDockingTabHost.FindDropTargetIndex(ATabBarLocalX: Single;
+function TnbDockingTabHost.FindDropTargetIndex(ATabBarLocalX: Single;
   AExcludeTab: TDockingTab): Integer;
 var
   I: Integer;
@@ -1540,10 +1540,10 @@ begin
   Result := FTabs.Count;
 end;
 
-procedure TDockingTabHost.TabButton_EnterPaneDrag(AButton: TTabButton);
+procedure TnbDockingTabHost.TabButton_EnterPaneDrag(AButton: TTabButton);
 var
   Cur, Target: TDockingTab;
-  TargetPaneHost: TDockingPaneHost;
+  TargetPaneHost: TnbDockingPaneHost;
 begin
   FDropIndicator.Visible := False;
   Cursor := crDrag;
@@ -1577,7 +1577,7 @@ begin
   end;
 end;
 
-procedure TDockingTabHost.TabButton_LeavePaneDrag(AButton: TTabButton);
+procedure TnbDockingTabHost.TabButton_LeavePaneDrag(AButton: TTabButton);
 begin
   FDropOverlay.HideOverlay;
   FDropOverlay.Parent := nil;
@@ -1586,7 +1586,7 @@ begin
   Cursor := crDefault;
 end;
 
-procedure TDockingTabHost.TabButton_UpdatePaneDrag(AButton: TTabButton;
+procedure TnbDockingTabHost.TabButton_UpdatePaneDrag(AButton: TTabButton;
   const AScreenPt: TPointF);
 var
   PaneLocalPt: TPointF;
@@ -1637,7 +1637,7 @@ begin
   FDropOverlay.Highlight(Hit);
 end;
 
-procedure TDockingTabHost.TabButton_DropOnPane(AButton: TTabButton;
+procedure TnbDockingTabHost.TabButton_DropOnPane(AButton: TTabButton;
   const AScreenPt: TPointF);
 var
   PaneLocalPt: TPointF;
@@ -1669,10 +1669,10 @@ begin
   end;
 end;
 
-function TDockingTabHost.FindDropTargetTab(const AScreenPt: TPointF;
+function TnbDockingTabHost.FindDropTargetTab(const AScreenPt: TPointF;
   out APaneLocalPt: TPointF): TDockingTab;
 var
-  TargetPaneHost: TDockingPaneHost;
+  TargetPaneHost: TnbDockingPaneHost;
 begin
   Result := nil;
   APaneLocalPt := PointF(0, 0);
@@ -1687,10 +1687,10 @@ begin
   APaneLocalPt := TargetPaneHost.ScreenToLocal(AScreenPt);
 end;
 
-procedure TDockingTabHost.PerformDockMove(ASourceTab, ATargetTab: TDockingTab;
+procedure TnbDockingTabHost.PerformDockMove(ASourceTab, ATargetTab: TDockingTab;
   ADir: TSplitDirection);
 var
-  Content: TDockingPaneContent;
+  Content: TnbDockingPaneContent;
 begin
   if (ASourceTab = nil) or (ATargetTab = nil) then Exit;
 
@@ -1710,7 +1710,7 @@ begin
   ATargetTab.PaneHost.SplitActive(ADir, Content);
 end;
 
-procedure TDockingTabHost.HandlePaneHostHeaderDrag(ASender: TDockingPaneHost;
+procedure TnbDockingTabHost.HandlePaneHostHeaderDrag(ASender: TnbDockingPaneHost;
   ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
 begin
   case APhase of
@@ -1720,7 +1720,7 @@ begin
   end;
 end;
 
-procedure TDockingTabHost.PaneHeader_Begin(ASourceHost: TDockingPaneHost;
+procedure TnbDockingTabHost.PaneHeader_Begin(ASourceHost: TnbDockingPaneHost;
   ASourceLeaf: TPaneLeaf);
 begin
   FHeaderDragSourceHost := ASourceHost;
@@ -1740,7 +1740,7 @@ begin
   FCurrentDropLeaf := nil;
 end;
 
-procedure TDockingTabHost.PaneHeader_Update(const AScreenPt: TPointF);
+procedure TnbDockingTabHost.PaneHeader_Update(const AScreenPt: TPointF);
 var
   HostPt, PaneLocalPt: TPointF;
   IsOverTabBar: Boolean;
@@ -1808,16 +1808,16 @@ begin
   FDropOverlay.Highlight(Hit);
 end;
 
-procedure TDockingTabHost.PaneHeader_End(const AScreenPt: TPointF);
+procedure TnbDockingTabHost.PaneHeader_End(const AScreenPt: TPointF);
 var
   HostPt, PaneLocalPt: TPointF;
   IsOverTabBar: Boolean;
   TargetTab, SourceTab: TDockingTab;
   TargetLeaf: TPaneLeaf;
   Hit: TDropHitResult;
-  Content: TDockingPaneContent;
+  Content: TnbDockingPaneContent;
   SourceLeaf: TPaneLeaf;
-  SourceHost: TDockingPaneHost;
+  SourceHost: TnbDockingPaneHost;
   NewCaption: string;
 begin
   SourceLeaf := FHeaderDragSourceLeaf;
@@ -1887,7 +1887,7 @@ begin
   TargetTab.PaneHost.SplitActive(Hit.Direction, Content);
 end;
 
-procedure TDockingTabHost.PaneHeader_ShowTabBarHint;
+procedure TnbDockingTabHost.PaneHeader_ShowTabBarHint;
 var
   LastBtn: TTabButton;
   IndicatorX: Single;
@@ -1908,7 +1908,7 @@ begin
   FDropIndicator.BringToFront;
 end;
 
-procedure TDockingTabHost.PaneHeader_HideTabBarHint;
+procedure TnbDockingTabHost.PaneHeader_HideTabBarHint;
 begin
   if FDropIndicator <> nil then
     FDropIndicator.Visible := False;

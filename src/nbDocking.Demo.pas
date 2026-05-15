@@ -1,4 +1,4 @@
-﻿unit nbDocking.Demo;
+unit nbDocking.Demo;
 
 (*
   DEBUG-заглушка для проверки движка докинга без реального контента.
@@ -13,7 +13,7 @@ uses
   nbDocking.Types;
 
 type
-  TDockingDemoPane = class(TDockingPaneContent)
+  TnbDockingDemoPane = class(TnbDockingPaneContent)
   private
     FNumber: Integer;
     FFillColor: TAlphaColor;
@@ -37,7 +37,7 @@ type
   public
     constructor Create(AOwner: TComponent); override;
 
-    class function CreateNext(AOwner: TComponent): TDockingDemoPane;
+    class function CreateNext(AOwner: TComponent): TnbDockingDemoPane;
 
     property Number: Integer read FNumber write SetNumber;
     property FillColor: TAlphaColor read FFillColor write FFillColor;
@@ -59,9 +59,9 @@ const
     TAlphaColor($FF94E2D5), TAlphaColor($FFEBA0AC)
   );
 
-{ TDockingDemoPane }
+{ TnbDockingDemoPane }
 
-constructor TDockingDemoPane.Create(AOwner: TComponent);
+constructor TnbDockingDemoPane.Create(AOwner: TComponent);
 begin
   inherited;
   Inc(GNextNumber);
@@ -71,12 +71,12 @@ begin
   BuildUI;
 end;
 
-class function TDockingDemoPane.CreateNext(AOwner: TComponent): TDockingDemoPane;
+class function TnbDockingDemoPane.CreateNext(AOwner: TComponent): TnbDockingDemoPane;
 begin
-  Result := TDockingDemoPane.Create(AOwner);
+  Result := TnbDockingDemoPane.Create(AOwner);
 end;
 
-procedure TDockingDemoPane.SetNumber(AValue: Integer);
+procedure TnbDockingDemoPane.SetNumber(AValue: Integer);
 begin
   FNumber := AValue;
   Caption := 'Pane #' + IntToStr(FNumber);
@@ -87,7 +87,7 @@ begin
   UpdateLabel;
 end;
 
-procedure TDockingDemoPane.BuildUI;
+procedure TnbDockingDemoPane.BuildUI;
 var
   BtnRow: TLayout;
   CenterBox: TLayout;
@@ -131,7 +131,7 @@ begin
   FBtnSplitLeft.Align := TAlignLayout.Left;
   FBtnSplitLeft.Width := 60;
   FBtnSplitLeft.Margins.Right := 6;
-  FBtnSplitLeft.Text := '◄ Split';
+  FBtnSplitLeft.Text := '< Split';
   FBtnSplitLeft.Hint := 'Split to the left';
   FBtnSplitLeft.OnClick := HandleSplitLeftClick;
 
@@ -140,7 +140,7 @@ begin
   FBtnSplitUp.Align := TAlignLayout.Left;
   FBtnSplitUp.Width := 60;
   FBtnSplitUp.Margins.Right := 6;
-  FBtnSplitUp.Text := '▲ Split';
+  FBtnSplitUp.Text := '^ Split';
   FBtnSplitUp.Hint := 'Split above';
   FBtnSplitUp.OnClick := HandleSplitUpClick;
 
@@ -149,7 +149,7 @@ begin
   FBtnSplitDown.Align := TAlignLayout.Left;
   FBtnSplitDown.Width := 60;
   FBtnSplitDown.Margins.Right := 6;
-  FBtnSplitDown.Text := '▼ Split';
+  FBtnSplitDown.Text := 'v Split';
   FBtnSplitDown.Hint := 'Split below';
   FBtnSplitDown.OnClick := HandleSplitDownClick;
 
@@ -158,7 +158,7 @@ begin
   FBtnSplitRight.Align := TAlignLayout.Left;
   FBtnSplitRight.Width := 60;
   FBtnSplitRight.Margins.Right := 12;
-  FBtnSplitRight.Text := 'Split ►';
+  FBtnSplitRight.Text := 'Split >';
   FBtnSplitRight.Hint := 'Split to the right';
   FBtnSplitRight.OnClick := HandleSplitRightClick;
 
@@ -166,44 +166,44 @@ begin
   FBtnClose.Parent := BtnRow;
   FBtnClose.Align := TAlignLayout.Left;
   FBtnClose.Width := 60;
-  FBtnClose.Text := '✕ Close';
+  FBtnClose.Text := 'x Close';
   FBtnClose.Hint := 'Close this pane';
   FBtnClose.OnClick := HandleCloseClick;
 end;
 
-procedure TDockingDemoPane.UpdateLabel;
+procedure TnbDockingDemoPane.UpdateLabel;
 begin
   if FNumberLabel <> nil then
     FNumberLabel.Text := 'Pane #' + IntToStr(FNumber);
 end;
 
-procedure TDockingDemoPane.HandleBgMouseDown(Sender: TObject;
+procedure TnbDockingDemoPane.HandleBgMouseDown(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
   RequestActivate;
 end;
 
-procedure TDockingDemoPane.HandleSplitLeftClick(Sender: TObject);
+procedure TnbDockingDemoPane.HandleSplitLeftClick(Sender: TObject);
 begin
   RequestSplit(sdLeft);
 end;
 
-procedure TDockingDemoPane.HandleSplitUpClick(Sender: TObject);
+procedure TnbDockingDemoPane.HandleSplitUpClick(Sender: TObject);
 begin
   RequestSplit(sdAbove);
 end;
 
-procedure TDockingDemoPane.HandleSplitDownClick(Sender: TObject);
+procedure TnbDockingDemoPane.HandleSplitDownClick(Sender: TObject);
 begin
   RequestSplit(sdBelow);
 end;
 
-procedure TDockingDemoPane.HandleSplitRightClick(Sender: TObject);
+procedure TnbDockingDemoPane.HandleSplitRightClick(Sender: TObject);
 begin
   RequestSplit(sdRight);
 end;
 
-procedure TDockingDemoPane.HandleCloseClick(Sender: TObject);
+procedure TnbDockingDemoPane.HandleCloseClick(Sender: TObject);
 begin
   RequestClose;
 end;
