@@ -1605,15 +1605,6 @@ begin
     Exit;
   end;
 
-  (* Drop на source: HitTestZone у скрытого оверлея вернёт NoZone, drop = no-op. *)
-  if TargetTab = AButton.Tab then
-  begin
-    FDropOverlay.HideOverlay;
-    FCurrentDropTarget := TargetTab;
-    FCurrentDropLeaf := nil;
-    Exit;
-  end;
-
   (* Конкретный leaf под курсором — а не FActiveLeaf — чтобы сплитить
      можно было любой pane, не только активный. *)
   TargetLeaf := TargetTab.PaneHost.FindLeafAt(PaneLocalPt);
