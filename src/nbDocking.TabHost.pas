@@ -72,6 +72,7 @@ type
     var ACanClose: Boolean) of object;
   TDockingActiveTabChangeEvent = procedure(Sender: TObject;
     AOldTab, ANewTab: TDockingTab) of object;
+  TTabBarActionEvent = procedure(Sender: TObject) of object;
 
   TTabDragState = (
     dsIdle,
@@ -127,6 +128,8 @@ type
     FActiveTab: TDockingTab;
     FTabBar: TLayout;
     FTabBarBg: TRectangle;
+    FActionButton: TRectangle;
+    FActionGlyph: TText;
     FAddButton: TRectangle;
     FAddGlyph: TText;
     FDropIndicator: TRectangle;
@@ -163,11 +166,19 @@ type
     FOnTabClosing: TDockingTabClosingEvent;
     FOnTabClosed: TDockingTabEvent;
     FOnActiveTabChanged: TDockingActiveTabChangeEvent;
+    FOnTabBarActionClick: TTabBarActionEvent;
+    FTabBarActionText: string;
+    FTabBarActionVisible: Boolean;
+    FTabAddVisible: Boolean;
 
     procedure BuildUI;
     procedure HandleTabBarResize(Sender: TObject);
     procedure HandleAddButtonClick(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleActionButtonClick(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure HandleActionButtonMouseEnter(Sender: TObject);
+    procedure HandleActionButtonMouseLeave(Sender: TObject);
     procedure HandleAddButtonMouseEnter(Sender: TObject);
     procedure HandleAddButtonMouseLeave(Sender: TObject);
     procedure HandlePaneHostActiveLeafChanged(Sender: TObject;
@@ -223,6 +234,9 @@ type
     procedure PaneHeader_End(const AScreenPt: TPointF);
     procedure PaneHeader_ShowTabBarHint;
     procedure PaneHeader_HideTabBarHint;
+    procedure SetTabBarActionText(const AValue: string);
+    procedure SetTabBarActionVisible(AValue: Boolean);
+    procedure SetTabAddVisible(AValue: Boolean);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -243,6 +257,8 @@ type
 
     property ActiveTab: TDockingTab read FActiveTab;
     property Tabs[AIndex: Integer]: TDockingTab read GetTab;
+    property OnTabBarActionClick: TTabBarActionEvent
+      read FOnTabBarActionClick write FOnTabBarActionClick;
   published
     property TabBarColor: TAlphaColor read FTabBarColor write FTabBarColor;
     property TabActiveColor: TAlphaColor read FTabActiveColor write FTabActiveColor;
@@ -250,6 +266,11 @@ type
     property TabHoverColor: TAlphaColor read FTabHoverColor write FTabHoverColor;
     property TabTextColor: TAlphaColor read FTabTextColor write FTabTextColor;
     property AccentColor: TAlphaColor read FAccentColor write FAccentColor;
+    property TabBarActionText: string read FTabBarActionText
+      write SetTabBarActionText;
+    property TabBarActionVisible: Boolean read FTabBarActionVisible
+      write SetTabBarActionVisible;
+    property TabAddVisible: Boolean read FTabAddVisible write SetTabAddVisible;
 
     property PaneHostBgColor: TAlphaColor
       read FPaneHostBgColor write FPaneHostBgColor;
@@ -925,6 +946,9 @@ begin
   FTabHoverColor     := TAlphaColor($FFEEEEEE);
   FTabTextColor      := TAlphaColor($FF202020);
   FAccentColor       := TAlphaColor($FF3D6FB5);
+  FTabBarActionText  := '';
+  FTabBarActionVisible := False;
+  FTabAddVisible := True;
 
   FPaneHostBgColor              := TAlphaColor($FFE5E5E5);
   FPaneHostLeafFrameColor       := TAlphaColor($FFCCCCCC);
@@ -979,6 +1003,32 @@ begin
   FTabBarBg.HitTest := False;
   FTabBarBg.SendToBack;
 
+  FActionButton := TRectangle.Create(Self);
+  FActionButton.Parent := FTabBar;
+  FActionButton.Align := TAlignLayout.Right;
+  FActionButton.Width := TAB_ADD_BUTTON_WIDTH;
+  FActionButton.Margins.Rect := RectF(2, 6, 2, 4);
+  FActionButton.Fill.Kind := TBrushKind.None;
+  FActionButton.Stroke.Kind := TBrushKind.None;
+  FActionButton.XRadius := 3;
+  FActionButton.YRadius := 3;
+  FActionButton.HitTest := True;
+  FActionButton.Visible := FTabBarActionVisible;
+  FActionButton.OnMouseDown := HandleActionButtonClick;
+  FActionButton.OnMouseEnter := HandleActionButtonMouseEnter;
+  FActionButton.OnMouseLeave := HandleActionButtonMouseLeave;
+
+  FActionGlyph := TText.Create(Self);
+  FActionGlyph.Parent := FActionButton;
+  FActionGlyph.Align := TAlignLayout.Client;
+  FActionGlyph.Text := FTabBarActionText;
+  FActionGlyph.TextSettings.HorzAlign := TTextAlign.Center;
+  FActionGlyph.TextSettings.VertAlign := TTextAlign.Center;
+  FActionGlyph.TextSettings.Font.Size := 14;
+  FActionGlyph.TextSettings.Font.Style := [TFontStyle.fsBold];
+  FActionGlyph.TextSettings.FontColor := FTabTextColor;
+  FActionGlyph.HitTest := False;
+
   FAddButton := TRectangle.Create(Self);
   FAddButton.Parent := FTabBar;
   FAddButton.Align := TAlignLayout.Right;
@@ -989,6 +1039,7 @@ begin
   FAddButton.XRadius := 3;
   FAddButton.YRadius := 3;
   FAddButton.HitTest := True;
+  FAddButton.Visible := FTabAddVisible;
   FAddButton.OnMouseDown := HandleAddButtonClick;
   FAddButton.OnMouseEnter := HandleAddButtonMouseEnter;
   FAddButton.OnMouseLeave := HandleAddButtonMouseLeave;
@@ -1031,6 +1082,27 @@ begin
   AddTab('New tab ' + (FTabs.Count + 1).ToString);
 end;
 
+procedure TnbDockingTabHost.HandleActionButtonClick(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if Assigned(FOnTabBarActionClick) then
+    FOnTabBarActionClick(Self);
+end;
+
+procedure TnbDockingTabHost.HandleActionButtonMouseEnter(Sender: TObject);
+begin
+  if FActionButton = nil then Exit;
+  FActionButton.Fill.Kind := TBrushKind.Solid;
+  FActionButton.Fill.Color := TAB_CLOSE_HOVER_COLOR;
+end;
+
+procedure TnbDockingTabHost.HandleActionButtonMouseLeave(Sender: TObject);
+begin
+  if FActionButton = nil then Exit;
+  FActionButton.Fill.Kind := TBrushKind.None;
+end;
+
 procedure TnbDockingTabHost.HandleAddButtonMouseEnter(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
@@ -1042,6 +1114,32 @@ procedure TnbDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.None;
+end;
+
+procedure TnbDockingTabHost.SetTabBarActionText(const AValue: string);
+begin
+  if FTabBarActionText = AValue then Exit;
+  FTabBarActionText := AValue;
+  if FActionGlyph <> nil then
+    FActionGlyph.Text := FTabBarActionText;
+end;
+
+procedure TnbDockingTabHost.SetTabBarActionVisible(AValue: Boolean);
+begin
+  if FTabBarActionVisible = AValue then Exit;
+  FTabBarActionVisible := AValue;
+  if FActionButton <> nil then
+    FActionButton.Visible := FTabBarActionVisible;
+  UpdateTabButtonWidths;
+end;
+
+procedure TnbDockingTabHost.SetTabAddVisible(AValue: Boolean);
+begin
+  if FTabAddVisible = AValue then Exit;
+  FTabAddVisible := AValue;
+  if FAddButton <> nil then
+    FAddButton.Visible := FTabAddVisible;
+  UpdateTabButtonWidths;
 end;
 
 procedure TnbDockingTabHost.UpdateTabBarVisual;
@@ -1069,6 +1167,8 @@ begin
     FTabBarBg.Fill.Color := BarColor;
   if FAddGlyph <> nil then
     FAddGlyph.TextSettings.FontColor := GlyphColor;
+  if FActionGlyph <> nil then
+    FActionGlyph.TextSettings.FontColor := GlyphColor;
 end;
 
 procedure TnbDockingTabHost.ScheduleDeferredCloseTab(ATab: TDockingTab);
@@ -1333,6 +1433,8 @@ begin
 
   if FTabBarBg <> nil then
     FTabBarBg.SendToBack;
+  if FActionButton <> nil then
+    FActionButton.BringToFront;
   if FAddButton <> nil then
     FAddButton.BringToFront;
   if (FDropIndicator <> nil) and FDropIndicator.Visible then
@@ -1368,7 +1470,11 @@ begin
 
   (* До первой раскладки TabBar.Width = 0 — ставим естественные ширины,
      сжатие сработает на ближайшем resize. *)
-  AvailableWidth := FTabBar.Width - TAB_ADD_BUTTON_WIDTH - 8;
+  AvailableWidth := FTabBar.Width - 8;
+  if FTabAddVisible then
+    AvailableWidth := AvailableWidth - TAB_ADD_BUTTON_WIDTH;
+  if FTabBarActionVisible then
+    AvailableWidth := AvailableWidth - TAB_ADD_BUTTON_WIDTH;
   if AvailableWidth <= 0 then
   begin
     for I := 0 to FTabs.Count - 1 do
