@@ -241,6 +241,21 @@ type
   (* Доступ к protected Capture/ReleaseCapture FHeader через cast-наследника. *)
   TControlAccess = class(TControl);
 
+function BlendPaneColor(AColor1, AColor2: TAlphaColor;
+  AWeight2: Single): TAlphaColor;
+var
+  W1: Single;
+begin
+  if AWeight2 < 0 then AWeight2 := 0;
+  if AWeight2 > 1 then AWeight2 := 1;
+  W1 := 1 - AWeight2;
+  Result :=
+    (Round(((AColor1 shr 24) and $FF) * W1 + ((AColor2 shr 24) and $FF) * AWeight2) shl 24) or
+    (Round(((AColor1 shr 16) and $FF) * W1 + ((AColor2 shr 16) and $FF) * AWeight2) shl 16) or
+    (Round(((AColor1 shr 8) and $FF) * W1 + ((AColor2 shr 8) and $FF) * AWeight2) shl 8) or
+    Round((AColor1 and $FF) * W1 + (AColor2 and $FF) * AWeight2);
+end;
+
 { TPaneLeafFrame }
 
 constructor TPaneLeafFrame.Create(AHost: TnbDockingPaneHost; ALeaf: TPaneLeaf);
@@ -436,6 +451,7 @@ begin
   FCloseGlyph.TextSettings.FontColor := C.HeaderTextColor;
   FTitleLabel.Text := C.Caption;
   RebuildHeaderActions;
+  SetActive(FLeaf = FHost.ActiveLeaf);
 end;
 
 procedure TPaneLeafFrame.RebuildHeaderActions;
@@ -540,15 +556,29 @@ begin
 end;
 
 procedure TPaneLeafFrame.SetActive(AIsActive: Boolean);
+var
+  C: TnbDockingPaneContent;
 begin
   if AIsActive then
   begin
-    Stroke.Color := FHost.ActiveLeafFrameColor;
-    Stroke.Thickness := FHost.LeafFrameThickness + 1;
+    C := nil;
+    if FLeaf <> nil then
+      C := FLeaf.Content;
+    if C <> nil then
+      Stroke.Color := C.HeaderTextColor
+    else
+      Stroke.Color := FHost.ActiveLeafFrameColor;
+    Stroke.Thickness := FHost.LeafFrameThickness;
   end
   else
   begin
-    Stroke.Color := FHost.LeafFrameColor;
+    C := nil;
+    if FLeaf <> nil then
+      C := FLeaf.Content;
+    if C <> nil then
+      Stroke.Color := BlendPaneColor(C.HeaderBgColor, C.HeaderTextColor, 0.42)
+    else
+      Stroke.Color := FHost.LeafFrameColor;
     Stroke.Thickness := FHost.LeafFrameThickness;
   end;
   Padding.Rect := RectF(Stroke.Thickness, Stroke.Thickness,
