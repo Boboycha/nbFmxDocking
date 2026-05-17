@@ -74,15 +74,19 @@ type
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
     FEditingTitle: Boolean;
+    FHeaderHovered: Boolean;
     procedure BeginRename;
     procedure CommitRename;
     procedure CancelRename;
     procedure RebuildHeaderActions;
     procedure LayoutHeaderActionButtons;
+    procedure UpdateHeaderActionsVisibility;
     procedure HandleFrameMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleActionMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleFrameMouseEnter(Sender: TObject);
+    procedure HandleFrameMouseLeave(Sender: TObject);
     procedure HandleFocusMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleCloseMouseDown(Sender: TObject; Button: TMouseButton;
@@ -94,6 +98,8 @@ type
       X, Y: Single);
     procedure HandleHeaderMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleHeaderMouseEnter(Sender: TObject);
+    procedure HandleHeaderMouseLeave(Sender: TObject);
     procedure HandleEditExit(Sender: TObject);
     procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
       var KeyChar: Char; Shift: TShiftState);
@@ -120,8 +126,13 @@ type
     FLeafFrameThickness: Single;
     FLeafFrameColor: TAlphaColor;
     FActiveLeafFrameColor: TAlphaColor;
+    FBackgroundColor: TAlphaColor;
     FHeaderHeight: Single;
     FSplitterSize: Single;
+    FSplitterColor: TAlphaColor;
+    FSplitterCovers: TList<TRectangle>;
+    FAutoMatchBg: Boolean;
+    FBackgroundRect: TRectangle;
     FSplitterInfos: TObjectList<TSplitterInfo>;
     FOnContentNeeded: TContentFactoryEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
@@ -158,6 +169,8 @@ type
     procedure InternalSetActive(ALeaf: TPaneLeaf);
     procedure SetActiveLeaf(AValue: TPaneLeaf);
     procedure SetFocusMode(AValue: Boolean);
+    procedure SetBackgroundColor(AValue: TAlphaColor);
+    procedure SyncBgFromContent(AContent: TnbDockingPaneContent);
     procedure HandleFocusItemMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
   public
@@ -197,7 +210,11 @@ type
       write FLeafFrameColor;
     property ActiveLeafFrameColor: TAlphaColor read FActiveLeafFrameColor
       write FActiveLeafFrameColor;
+    property BackgroundColor: TAlphaColor read FBackgroundColor
+      write SetBackgroundColor;
     property SplitterSize: Single read FSplitterSize write FSplitterSize;
+    property SplitterColor: TAlphaColor read FSplitterColor write FSplitterColor;
+    property AutoMatchBg: Boolean read FAutoMatchBg write FAutoMatchBg;
     property HeaderHeight: Single read FHeaderHeight write FHeaderHeight;
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
@@ -237,13 +254,16 @@ begin
   (* TagObject связывает frame с листом для FindFrameRectFor. *)
   TagObject := ALeaf;
 
-  Fill.Kind := TBrushKind.None;
+  Fill.Kind := TBrushKind.Solid;
+  Fill.Color := AHost.BackgroundColor;
   Stroke.Color := AHost.LeafFrameColor;
   Stroke.Thickness := AHost.LeafFrameThickness;
   HitTest := True;
   Padding.Rect := RectF(AHost.LeafFrameThickness, AHost.LeafFrameThickness,
                         AHost.LeafFrameThickness, AHost.LeafFrameThickness);
   OnMouseDown := HandleFrameMouseDown;
+  OnMouseEnter := HandleFrameMouseEnter;
+  OnMouseLeave := HandleFrameMouseLeave;
 
   FHeader := TRectangle.Create(Self);
   FHeader.Corners:=[TCorner.TopLeft, TCorner.TopRight];
@@ -254,11 +274,13 @@ begin
   FHeader.Align := TAlignLayout.Top;
   FHeader.Height := AHost.HeaderHeight;
   FHeader.Stroke.Kind := TBrushKind.None;
-  FHeader.Fill.Kind := TBrushKind.None;
+  FHeader.Fill.Kind := TBrushKind.Solid;
   FHeader.HitTest := True;
   FHeader.OnMouseDown := HandleHeaderMouseDown;
   FHeader.OnMouseMove := HandleHeaderMouseMove;
   FHeader.OnMouseUp := HandleHeaderMouseUp;
+  FHeader.OnMouseEnter := HandleHeaderMouseEnter;
+  FHeader.OnMouseLeave := HandleHeaderMouseLeave;
 
   FActionsLayout := TLayout.Create(Self);
   FActionsLayout.Parent := FHeader;
@@ -405,6 +427,9 @@ begin
   if C = nil then Exit;
   if FEditingTitle then Exit;
 
+  Fill.Kind := TBrushKind.Solid;
+  Fill.Color := C.HeaderBgColor;
+  FHeader.Fill.Kind := TBrushKind.Solid;
   FHeader.Fill.Color := C.HeaderBgColor;
   FTitleLabel.TextSettings.FontColor := C.HeaderTextColor;
   FFocusGlyph.TextSettings.FontColor := C.HeaderTextColor;
@@ -504,6 +529,14 @@ begin
     Inc(Slot);
   end;
   FActionsLayout.Width := Slot * 24;
+  UpdateHeaderActionsVisibility;
+end;
+
+procedure TPaneLeafFrame.UpdateHeaderActionsVisibility;
+begin
+  if FActionsLayout <> nil then
+    FActionsLayout.Visible := (FLeaf = FHost.ActiveLeaf) or FEditingTitle
+      or FHeaderHovered;
 end;
 
 procedure TPaneLeafFrame.SetActive(AIsActive: Boolean);
@@ -518,8 +551,9 @@ begin
     Stroke.Color := FHost.LeafFrameColor;
     Stroke.Thickness := FHost.LeafFrameThickness;
   end;
-  if FActionsLayout <> nil then
-    FActionsLayout.Visible := AIsActive;
+  Padding.Rect := RectF(Stroke.Thickness, Stroke.Thickness,
+                        Stroke.Thickness, Stroke.Thickness);
+  UpdateHeaderActionsVisibility;
 end;
 
 procedure TPaneLeafFrame.SetHeaderVisible(AVisible: Boolean);
@@ -646,6 +680,29 @@ begin
   end;
 end;
 
+procedure TPaneLeafFrame.HandleFrameMouseEnter(Sender: TObject);
+begin
+  FHeaderHovered := True;
+  UpdateHeaderActionsVisibility;
+end;
+
+procedure TPaneLeafFrame.HandleFrameMouseLeave(Sender: TObject);
+begin
+  FHeaderHovered := False;
+  if FDragState = hdsIdle then
+    UpdateHeaderActionsVisibility;
+end;
+
+procedure TPaneLeafFrame.HandleHeaderMouseEnter(Sender: TObject);
+begin
+  HandleFrameMouseEnter(Sender);
+end;
+
+procedure TPaneLeafFrame.HandleHeaderMouseLeave(Sender: TObject);
+begin
+  HandleFrameMouseLeave(Sender);
+end;
+
 procedure TPaneLeafFrame.HandleEditExit(Sender: TObject);
 begin
   CommitRename;
@@ -682,9 +739,22 @@ begin
   FLeafFrameThickness := 1.0;
   FLeafFrameColor := TAlphaColor($FFCCCCCC);
   FActiveLeafFrameColor := TAlphaColor($FF3D6FB5);
+  FBackgroundColor := TAlphaColor($FFE5E5E5);
   FHeaderHeight := 24;
   FSplitterSize := 4.0;
+  FSplitterColor := TAlphaColor(0);
+  FSplitterCovers := TList<TRectangle>.Create;
+  FAutoMatchBg := False;
   FSplitterInfos := TObjectList<TSplitterInfo>.Create(True);
+
+  FBackgroundRect := TRectangle.Create(Self);
+  FBackgroundRect.Parent := Self;
+  FBackgroundRect.Align := TAlignLayout.Contents;
+  FBackgroundRect.Fill.Kind := TBrushKind.Solid;
+  FBackgroundRect.Fill.Color := FBackgroundColor;
+  FBackgroundRect.Stroke.Kind := TBrushKind.None;
+  FBackgroundRect.HitTest := False;
+  FBackgroundRect.SendToBack;
 
   FRootLayout := TLayout.Create(Self);
   FRootLayout.Parent := Self;
@@ -694,6 +764,7 @@ end;
 destructor TnbDockingPaneHost.Destroy;
 begin
   FSplitterInfos.Free;
+  FSplitterCovers.Free;
   FTree.Free;
   (* Контенты висят с Owner=Self — их FMX уничтожит каскадом. *)
   inherited;
@@ -749,6 +820,9 @@ begin
   Frame := FindFrameRectFor(FRootLayout, Leaf);
   if (Frame <> nil) and (Frame is TPaneLeafFrame) then
     TPaneLeafFrame(Frame).UpdateFromContent;
+
+  if FAutoMatchBg and (Leaf = FActiveLeaf) then
+    SyncBgFromContent(Sender);
 
   if Assigned(FOnContentHeaderChanged) then
     FOnContentHeaderChanged(Self, Sender);
@@ -934,6 +1008,35 @@ begin
   RebuildVisualTree;
 end;
 
+procedure TnbDockingPaneHost.SetBackgroundColor(AValue: TAlphaColor);
+var
+  Cover: TRectangle;
+begin
+  if FBackgroundColor = AValue then Exit;
+  FBackgroundColor := AValue;
+  if FBackgroundRect <> nil then
+    FBackgroundRect.Fill.Color := FBackgroundColor;
+  for Cover in FSplitterCovers do
+    Cover.Fill.Color := FBackgroundColor;
+  RebuildVisualTree;
+end;
+
+procedure TnbDockingPaneHost.SyncBgFromContent(AContent: TnbDockingPaneContent);
+var
+  NewColor: TAlphaColor;
+  Cover: TRectangle;
+begin
+  if AContent = nil then Exit;
+  NewColor := AContent.HeaderBgColor;
+  if FBackgroundColor = NewColor then Exit;
+  FBackgroundColor := NewColor;
+  FSplitterColor   := NewColor;
+  if FBackgroundRect <> nil then
+    FBackgroundRect.Fill.Color := NewColor;
+  for Cover in FSplitterCovers do
+    Cover.Fill.Color := NewColor;
+end;
+
 procedure TnbDockingPaneHost.HandleFocusItemMouseDown(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 var
@@ -1026,7 +1129,11 @@ begin
   FActiveLeaf := ALeaf;
 
   if (FActiveLeaf <> nil) and (FActiveLeaf.Content <> nil) then
+  begin
     FActiveLeaf.Content.Activate;
+    if FAutoMatchBg then
+      SyncBgFromContent(FActiveLeaf.Content);
+  end;
 
   UpdateActiveFrames;
 
@@ -1084,11 +1191,14 @@ begin
   try
     DetachAllContents;
     FSplitterInfos.Clear;
+    FSplitterCovers.Clear;
 
     FRootLayout.Free;
     FRootLayout := TLayout.Create(Self);
     FRootLayout.Parent := Self;
     FRootLayout.Align := TAlignLayout.Client;
+    if FBackgroundRect <> nil then
+      FBackgroundRect.SendToBack;
 
     if FFocusMode then
     begin
@@ -1316,6 +1426,16 @@ begin
         Info := TSplitterInfo.Create(ASplit, I);
         FSplitterInfos.Add(Info);
         Splitter.TagObject := Info;
+        if (FSplitterColor shr 24) > 0 then
+        begin
+          var Cover := TRectangle.Create(Self);
+          Cover.Parent := Splitter;
+          Cover.Align := TAlignLayout.Contents;
+          Cover.Fill.Color := FSplitterColor;
+          Cover.Stroke.Kind := TBrushKind.None;
+          Cover.HitTest := False;
+          FSplitterCovers.Add(Cover);
+        end;
       end;
     end;
   finally

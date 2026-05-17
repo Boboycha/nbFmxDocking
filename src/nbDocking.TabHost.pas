@@ -151,6 +151,12 @@ type
     FTabTextColor: TAlphaColor;
     FAccentColor: TAlphaColor;
 
+    FPaneHostBgColor: TAlphaColor;
+    FPaneHostLeafFrameColor: TAlphaColor;
+    FPaneHostActiveLeafFrameColor: TAlphaColor;
+    FPaneHostSplitterColor: TAlphaColor;
+    FPaneHostAutoMatchBg: Boolean;
+
     FOnContentNeeded: TContentFactoryEvent;
     FOnTabAdded: TDockingTabEvent;
     FOnTabClick: TDockingTabClickEvent;
@@ -174,6 +180,7 @@ type
 
     procedure RelayoutTabButtons;
     procedure UpdateTabButtonWidths;
+    procedure UpdateTabBarVisual;
     procedure InternalActivateTab(ATab: TDockingTab);
     function FindTabByPaneHost(APaneHost: TnbDockingPaneHost): TDockingTab;
     function IndexOfTab(ATab: TDockingTab): Integer;
@@ -244,6 +251,17 @@ type
     property TabTextColor: TAlphaColor read FTabTextColor write FTabTextColor;
     property AccentColor: TAlphaColor read FAccentColor write FAccentColor;
 
+    property PaneHostBgColor: TAlphaColor
+      read FPaneHostBgColor write FPaneHostBgColor;
+    property PaneHostLeafFrameColor: TAlphaColor
+      read FPaneHostLeafFrameColor write FPaneHostLeafFrameColor;
+    property PaneHostActiveLeafFrameColor: TAlphaColor
+      read FPaneHostActiveLeafFrameColor write FPaneHostActiveLeafFrameColor;
+    property PaneHostSplitterColor: TAlphaColor
+      read FPaneHostSplitterColor write FPaneHostSplitterColor;
+    property PaneHostAutoMatchBg: Boolean
+      read FPaneHostAutoMatchBg write FPaneHostAutoMatchBg;
+
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
     property OnTabAdded: TDockingTabEvent read FOnTabAdded write FOnTabAdded;
@@ -257,6 +275,63 @@ type
   end;
 
 implementation
+
+function BlendAlphaColor(A, B: TAlphaColor; AWeight: Single): TAlphaColor;
+var
+  W, IW: Single;
+  AA, AR, AG, AB, BA, BR, BG, BB: Integer;
+  CA, CR, CG, CB: Integer;
+begin
+  if AWeight < 0 then W := 0
+  else if AWeight > 1 then W := 1
+  else W := AWeight;
+  IW := 1 - W;
+
+  AA := (A shr 24) and $FF;
+  AR := (A shr 16) and $FF;
+  AG := (A shr 8) and $FF;
+  AB := A and $FF;
+  BA := (B shr 24) and $FF;
+  BR := (B shr 16) and $FF;
+  BG := (B shr 8) and $FF;
+  BB := B and $FF;
+
+  CA := Round(AA * W + BA * IW);
+  CR := Round(AR * W + BR * IW);
+  CG := Round(AG * W + BG * IW);
+  CB := Round(AB * W + BB * IW);
+  Result := TAlphaColor((CA shl 24) or (CR shl 16) or (CG shl 8) or CB);
+end;
+
+function ColorLuma(AColor: TAlphaColor): Single;
+var
+  R, G, B: Integer;
+begin
+  R := (AColor shr 16) and $FF;
+  G := (AColor shr 8) and $FF;
+  B := AColor and $FF;
+  Result := R * 0.299 + G * 0.587 + B * 0.114;
+end;
+
+function ReadableTextColor(ABg, APreferred, AFallback: TAlphaColor): TAlphaColor;
+const
+  MIN_DELTA = 72;
+var
+  BgLuma, PreferredLuma: Single;
+begin
+  BgLuma := ColorLuma(ABg);
+  PreferredLuma := ColorLuma(APreferred);
+  if Abs(BgLuma - PreferredLuma) >= MIN_DELTA then
+    Exit(APreferred);
+
+  if Abs(BgLuma - ColorLuma(AFallback)) >= MIN_DELTA then
+    Exit(AFallback);
+
+  if BgLuma > 140 then
+    Result := TAlphaColor($FF101820)
+  else
+    Result := TAlphaColor($FFF2F6FA);
+end;
 
 { TDockingTab }
 
@@ -275,6 +350,12 @@ begin
   FPaneHost.OnActiveLeafChanged := AOwner.HandlePaneHostActiveLeafChanged;
   FPaneHost.OnContentHeaderChanged := AOwner.HandlePaneHostContentHeaderChanged;
   FPaneHost.OnHeaderDrag := AOwner.HandlePaneHostHeaderDrag;
+
+  FPaneHost.BackgroundColor       := AOwner.PaneHostBgColor;
+  FPaneHost.LeafFrameColor        := AOwner.PaneHostLeafFrameColor;
+  FPaneHost.ActiveLeafFrameColor  := AOwner.PaneHostActiveLeafFrameColor;
+  FPaneHost.SplitterColor         := AOwner.PaneHostSplitterColor;
+  FPaneHost.AutoMatchBg           := AOwner.PaneHostAutoMatchBg;
 end;
 
 destructor TDockingTab.Destroy;
@@ -592,20 +673,50 @@ end;
 procedure TTabButton.UpdateVisual(AIsActive: Boolean);
 var
   Host: TnbDockingTabHost;
+  Content: TnbDockingPaneContent;
+  BgColor, TextColor: TAlphaColor;
 begin
   if FTab = nil then Exit;
   Host := FTab.Owner;
   if Host = nil then Exit;
-  if AIsActive then
-    Fill.Color := Host.TabActiveColor
-  else if FHovered then
-    Fill.Color := Host.TabHoverColor
+
+  Content := nil;
+  if FTab.PaneHost <> nil then
+    Content := FTab.PaneHost.ActiveLeafContent;
+
+  if Content <> nil then
+  begin
+    if AIsActive then
+    begin
+      BgColor := Content.HeaderBgColor;
+      TextColor := Content.HeaderTextColor;
+    end
+    else
+    begin
+      if FHovered then
+        BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabHoverColor, 0.38)
+      else
+        BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabInactiveColor, 0.24);
+      TextColor := ReadableTextColor(BgColor, Content.HeaderTextColor,
+        Host.TabTextColor);
+    end;
+  end
   else
-    Fill.Color := Host.TabInactiveColor;
-  FCaptionLabel.TextSettings.FontColor := Host.TabTextColor;
-  FCloseGlyph.TextSettings.FontColor := Host.TabTextColor;
+  begin
+    if AIsActive then
+      BgColor := Host.TabActiveColor
+    else if FHovered then
+      BgColor := Host.TabHoverColor
+    else
+      BgColor := Host.TabInactiveColor;
+    TextColor := Host.TabTextColor;
+  end;
+
+  Fill.Color := BgColor;
+  FCaptionLabel.TextSettings.FontColor := TextColor;
+  FCloseGlyph.TextSettings.FontColor := TextColor;
   if FGroupGlyph <> nil then
-    FGroupGlyph.TextSettings.FontColor := Host.TabTextColor;
+    FGroupGlyph.TextSettings.FontColor := TextColor;
 end;
 
 procedure TTabButton.HandleMouseDown(Sender: TObject; Button: TMouseButton;
@@ -815,6 +926,12 @@ begin
   FTabTextColor      := TAlphaColor($FF202020);
   FAccentColor       := TAlphaColor($FF3D6FB5);
 
+  FPaneHostBgColor              := TAlphaColor($FFE5E5E5);
+  FPaneHostLeafFrameColor       := TAlphaColor($FFCCCCCC);
+  FPaneHostActiveLeafFrameColor := TAlphaColor($FF3D6FB5);
+  FPaneHostSplitterColor        := TAlphaColor(0);
+  FPaneHostAutoMatchBg          := False;
+
   BuildUI;
 
   FDropOverlay := TDockingDropOverlay.Create(Self);
@@ -904,6 +1021,7 @@ end;
 procedure TnbDockingTabHost.HandleTabBarResize(Sender: TObject);
 begin
   UpdateTabButtonWidths;
+  UpdateTabBarVisual;
 end;
 
 procedure TnbDockingTabHost.HandleAddButtonClick(Sender: TObject;
@@ -924,6 +1042,33 @@ procedure TnbDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.None;
+end;
+
+procedure TnbDockingTabHost.UpdateTabBarVisual;
+var
+  Content: TnbDockingPaneContent;
+  BarColor, GlyphColor: TAlphaColor;
+begin
+  Content := nil;
+  if (FActiveTab <> nil) and (FActiveTab.PaneHost <> nil) then
+    Content := FActiveTab.PaneHost.ActiveLeafContent;
+
+  if Content <> nil then
+  begin
+    BarColor := BlendAlphaColor(Content.HeaderBgColor, FTabBarColor, 0.72);
+    GlyphColor := ReadableTextColor(BarColor, Content.HeaderTextColor,
+      FTabTextColor);
+  end
+  else
+  begin
+    BarColor := FTabBarColor;
+    GlyphColor := FTabTextColor;
+  end;
+
+  if FTabBarBg <> nil then
+    FTabBarBg.Fill.Color := BarColor;
+  if FAddGlyph <> nil then
+    FAddGlyph.TextSettings.FontColor := GlyphColor;
 end;
 
 procedure TnbDockingTabHost.ScheduleDeferredCloseTab(ATab: TDockingTab);
@@ -1134,6 +1279,7 @@ var
 begin
   if ATab = FActiveTab then
   begin
+    UpdateTabBarVisual;
     for I := 0 to FTabs.Count - 1 do
       if FTabs[I].FButton <> nil then
         FTabs[I].FButton.UpdateVisual(FTabs[I] = FActiveTab);
@@ -1153,6 +1299,7 @@ begin
   for I := 0 to FTabs.Count - 1 do
     if FTabs[I].FButton <> nil then
       FTabs[I].FButton.UpdateVisual(FTabs[I] = FActiveTab);
+  UpdateTabBarVisual;
 
   if Assigned(FOnActiveTabChanged) then
     FOnActiveTabChanged(Self, Old, FActiveTab);
@@ -1405,6 +1552,10 @@ begin
     Tab.FButton.UpdateCaption;
     UpdateTabButtonWidths;
   end;
+
+  if Tab.FButton <> nil then
+    Tab.FButton.UpdateVisual(Tab = FActiveTab);
+  UpdateTabBarVisual;
 end;
 
 procedure TnbDockingTabHost.HandlePaneHostContentNeeded(Sender: TObject;
