@@ -769,7 +769,8 @@ begin
   FLeafFrameThickness := 1.0;
   FLeafFrameColor := TAlphaColor($FFCCCCCC);
   FActiveLeafFrameColor := TAlphaColor($FF3D6FB5);
-  FBackgroundColor := TAlphaColor($FFE5E5E5);
+  (* Прозрачно по умолчанию — сквозь зазоры виден фон формы-хоста. *)
+  FBackgroundColor := TAlphaColor(0);
   FHeaderHeight := 24;
   FSplitterSize := 4.0;
   FSplitterColor := TAlphaColor(0);
@@ -1465,7 +1466,10 @@ begin
           Cover.Stroke.Kind := TBrushKind.None;
           Cover.HitTest := False;
           FSplitterCovers.Add(Cover);
-        end;
+        end
+        else
+          (* Цвет не задан — сплиттер полностью невидим (тянуть можно). *)
+          Splitter.Opacity := 0;
       end;
     end;
   finally
