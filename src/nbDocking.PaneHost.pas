@@ -6,11 +6,14 @@ unit nbDocking.PaneHost;
   - Owner каждого TnbDockingPaneContent = PaneHost. При уничтожении хоста
     FMX cascade подберёт и контент.
   - На любое OnChanged дерева визуал пересоздаётся целиком. Перед сносом
-    старых обёрток DetachAllContents выставляет Parent := nil у живых
-    контентов — иначе FMX каскадно уничтожит их вместе с обёрткой.
-  - Контент уничтожается ТОЛЬКО в CloseActive (через TThread.Queue —
-    см. комментарий там). TakeActiveContent/TakeLeafContent снимают
-    контент с дерева без Free для переноса в другой хост.
+    старых слотов DetachAllContents выставляет Parent := nil у живых
+    контентов — иначе FMX каскадно уничтожит их вместе со слотом.
+  - Контент уничтожается ТОЛЬКО в CloseActive (через TThread.Queue).
+    TakeActiveContent/TakeLeafContent снимают контент с дерева без Free
+    для переноса в другой хост.
+  - В новой модели листовой "фрейм" — это тонкий TLayout-слот. Сама
+    карточка с заголовком/кнопками/рамкой = TnbDockingPaneContent
+    (потомок TRectangle). PaneHost больше не рисует заголовок и рамку.
 *)
 
 interface
@@ -30,11 +33,9 @@ type
   TContentHeaderChangeEvent = procedure(Sender: TObject;
     AContent: TnbDockingPaneContent) of object;
 
-  (* Drag заголовка pane транслируется наверх — drop-цель ищет TabHost. *)
-  TPaneHeaderDragPhase = (phdStart, phdMove, phdEnd);
-
   TnbDockingPaneHost = class;
 
+  (* Drag заголовка карточки транслируется наверх — drop-цель ищет TabHost. *)
   TPaneHeaderDragEvent = procedure(ASender: TnbDockingPaneHost; ALeaf: TPaneLeaf;
     APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF) of object;
 
@@ -46,75 +47,10 @@ type
     constructor Create(ASplit: TPaneSplit; ALeftIdx: Integer);
   end;
 
-  TPaneHeaderDragState = (hdsIdle, hdsArmed, hdsDragging);
-
-  TPaneHeaderActionButton = class(TRectangle)
-  public
-    ActionId: string;
-  end;
-
+  (* Элемент сайдбара focus-mode — клик переключает активный лист. *)
   TPaneFocusItem = class(TRectangle)
   public
     Leaf: TPaneLeaf;
-  end;
-
-  TPaneLeafFrame = class(TRectangle)
-  private
-    FHost: TnbDockingPaneHost;
-    FLeaf: TPaneLeaf;
-    FHeader: TRectangle;
-    FTitleLabel: TLabel;
-    FTitleEdit: TEdit;
-    FActionsLayout: TLayout;
-    FFocusBtn: TRectangle;
-    FFocusGlyph: TText;
-    FCloseBtn: TRectangle;
-    FCloseGlyph: TText;
-    FActionButtons: TList<TPaneHeaderActionButton>;
-    FDragState: TPaneHeaderDragState;
-    FDragStartX, FDragStartY: Single;
-    FEditingTitle: Boolean;
-    FHeaderHovered: Boolean;
-    procedure BeginRename;
-    procedure CommitRename;
-    procedure CancelRename;
-    procedure RebuildHeaderActions;
-    procedure LayoutHeaderActionButtons;
-    procedure UpdateHeaderActionsVisibility;
-    procedure HandleFrameMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
-    procedure HandleActionMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
-    procedure HandleFrameMouseEnter(Sender: TObject);
-    procedure HandleFrameMouseLeave(Sender: TObject);
-    procedure HandleFocusMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
-    procedure HandleCloseMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
-    procedure HandleHeaderDblClick(Sender: TObject);
-    procedure HandleHeaderMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
-    procedure HandleHeaderMouseMove(Sender: TObject; Shift: TShiftState;
-      X, Y: Single);
-    procedure HandleHeaderMouseUp(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
-    procedure HandleHeaderMouseEnter(Sender: TObject);
-    procedure HandleHeaderMouseLeave(Sender: TObject);
-    procedure HandleEditExit(Sender: TObject);
-    procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
-      var KeyChar: Char; Shift: TShiftState);
-  public
-    constructor Create(AHost: TnbDockingPaneHost; ALeaf: TPaneLeaf); reintroduce;
-    destructor Destroy; override;
-    procedure UpdateFromContent;
-    procedure SetActive(AIsActive: Boolean);
-    procedure SetHeaderVisible(AVisible: Boolean);
-    property Leaf: TPaneLeaf read FLeaf;
-    property Header: TRectangle read FHeader;
-
-    (* Слот под доп. кнопки header (split-icon, reload, maximize и т.п.) —
-       Align=Right, видимость = (Leaf = ActiveLeaf). *)
-    property ActionsLayout: TLayout read FActionsLayout;
   end;
 
   TnbDockingPaneHost = class(TLayout)
@@ -123,11 +59,7 @@ type
     FActiveLeaf: TPaneLeaf;
     FRootLayout: TLayout;
     FBuilding: Boolean;
-    FLeafFrameThickness: Single;
-    FLeafFrameColor: TAlphaColor;
-    FActiveLeafFrameColor: TAlphaColor;
     FBackgroundColor: TAlphaColor;
-    FHeaderHeight: Single;
     FSplitterSize: Single;
     FSplitterColor: TAlphaColor;
     FSplitterCovers: TList<TRectangle>;
@@ -146,6 +78,8 @@ type
     procedure HandleContentCloseRequest(Sender: TnbDockingPaneContent);
     procedure HandleContentActivateRequest(Sender: TnbDockingPaneContent);
     procedure HandleContentHeaderChanged(Sender: TnbDockingPaneContent);
+    procedure HandleContentHeaderDrag(ASender: TnbDockingPaneContent;
+      APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
     procedure HandleSplitLayoutResize(Sender: TObject);
     procedure HandleSplitterMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -157,15 +91,13 @@ type
     function BuildNode(ANode: TPaneNode; AContainer: TFmxObject;
       AAlign: TAlignLayout; ASize: Single): TFmxObject;
     function BuildLeaf(ALeaf: TPaneLeaf; AContainer: TFmxObject;
-      AAlign: TAlignLayout; ASize: Single): TPaneLeafFrame;
+      AAlign: TAlignLayout; ASize: Single): TLayout;
     function BuildSplit(ASplit: TPaneSplit; AContainer: TFmxObject;
       AAlign: TAlignLayout; ASize: Single): TLayout;
     procedure RecalcSplitChildSizes(ASplit: TPaneSplit; ASplitLayout: TLayout);
     procedure RecalcSplitProportions(ASplit: TPaneSplit; AContainer: TLayout);
     function FindLeafByContent(AContent: TnbDockingPaneContent): TPaneLeaf;
-    function FindFrameRectFor(AContainer: TFmxObject;
-      ALeaf: TPaneLeaf): TRectangle;
-    procedure UpdateActiveFrames;
+    function FindSlotFor(AContainer: TFmxObject; ALeaf: TPaneLeaf): TLayout;
     procedure InternalSetActive(ALeaf: TPaneLeaf);
     procedure SetActiveLeaf(AValue: TPaneLeaf);
     procedure SetFocusMode(AValue: Boolean);
@@ -204,18 +136,11 @@ type
     property ActiveLeaf: TPaneLeaf read FActiveLeaf write SetActiveLeaf;
     property FocusMode: Boolean read FFocusMode write SetFocusMode;
   published
-    property LeafFrameThickness: Single read FLeafFrameThickness
-      write FLeafFrameThickness;
-    property LeafFrameColor: TAlphaColor read FLeafFrameColor
-      write FLeafFrameColor;
-    property ActiveLeafFrameColor: TAlphaColor read FActiveLeafFrameColor
-      write FActiveLeafFrameColor;
     property BackgroundColor: TAlphaColor read FBackgroundColor
       write SetBackgroundColor;
     property SplitterSize: Single read FSplitterSize write FSplitterSize;
     property SplitterColor: TAlphaColor read FSplitterColor write FSplitterColor;
     property AutoMatchBg: Boolean read FAutoMatchBg write FAutoMatchBg;
-    property HeaderHeight: Single read FHeaderHeight write FHeaderHeight;
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
     property OnActiveLeafChanged: TActiveLeafChangeEvent
@@ -237,524 +162,6 @@ begin
   LeftChildIndex := ALeftIdx;
 end;
 
-type
-  (* Доступ к protected Capture/ReleaseCapture FHeader через cast-наследника. *)
-  TControlAccess = class(TControl);
-
-function BlendPaneColor(AColor1, AColor2: TAlphaColor;
-  AWeight2: Single): TAlphaColor;
-var
-  W1: Single;
-begin
-  if AWeight2 < 0 then AWeight2 := 0;
-  if AWeight2 > 1 then AWeight2 := 1;
-  W1 := 1 - AWeight2;
-  Result :=
-    (Round(((AColor1 shr 24) and $FF) * W1 + ((AColor2 shr 24) and $FF) * AWeight2) shl 24) or
-    (Round(((AColor1 shr 16) and $FF) * W1 + ((AColor2 shr 16) and $FF) * AWeight2) shl 16) or
-    (Round(((AColor1 shr 8) and $FF) * W1 + ((AColor2 shr 8) and $FF) * AWeight2) shl 8) or
-    Round((AColor1 and $FF) * W1 + (AColor2 and $FF) * AWeight2);
-end;
-
-{ TPaneLeafFrame }
-
-constructor TPaneLeafFrame.Create(AHost: TnbDockingPaneHost; ALeaf: TPaneLeaf);
-begin
-  inherited Create(AHost);
-  FHost := AHost;
-  FLeaf := ALeaf;
-  FActionButtons := TList<TPaneHeaderActionButton>.Create;
-  XRadius:=10;
-  YRadius:=10;
-  (* TagObject связывает frame с листом для FindFrameRectFor. *)
-  TagObject := ALeaf;
-
-  Fill.Kind := TBrushKind.Solid;
-  Fill.Color := AHost.BackgroundColor;
-  Stroke.Color := AHost.LeafFrameColor;
-  Stroke.Thickness := AHost.LeafFrameThickness;
-  HitTest := True;
-  Padding.Rect := RectF(AHost.LeafFrameThickness, AHost.LeafFrameThickness,
-                        AHost.LeafFrameThickness, AHost.LeafFrameThickness);
-  OnMouseDown := HandleFrameMouseDown;
-  OnMouseEnter := HandleFrameMouseEnter;
-  OnMouseLeave := HandleFrameMouseLeave;
-
-  FHeader := TRectangle.Create(Self);
-  FHeader.Corners:=[TCorner.TopLeft, TCorner.TopRight];
-  FHeader.XRadius:=10;
-  FHeader.YRadius:=10;
-
-  FHeader.Parent := Self;
-  FHeader.Align := TAlignLayout.Top;
-  FHeader.Height := AHost.HeaderHeight;
-  FHeader.Stroke.Kind := TBrushKind.None;
-  FHeader.Fill.Kind := TBrushKind.Solid;
-  FHeader.HitTest := True;
-  FHeader.OnMouseDown := HandleHeaderMouseDown;
-  FHeader.OnMouseMove := HandleHeaderMouseMove;
-  FHeader.OnMouseUp := HandleHeaderMouseUp;
-  FHeader.OnMouseEnter := HandleHeaderMouseEnter;
-  FHeader.OnMouseLeave := HandleHeaderMouseLeave;
-
-  FActionsLayout := TLayout.Create(Self);
-  FActionsLayout.Parent := FHeader;
-  FActionsLayout.Align := TAlignLayout.Right;
-  FActionsLayout.Width := 24;
-  FActionsLayout.Visible := False;
-  FActionsLayout.HitTest := True;
-
-  (* Порядок создания важен: FTitleLabel (Align=Client) после
-     FActionsLayout (Align=Right) — иначе FMX отдаст Client всё, не
-     оставив Right-слоту места. *)
-  FTitleLabel := TLabel.Create(Self);
-  FTitleLabel.Parent := FHeader;
-  FTitleLabel.Align := TAlignLayout.Client;
-  FTitleLabel.Margins.Rect := RectF(8, 0, 4, 0);
-  FTitleLabel.TextSettings.HorzAlign := TTextAlign.Leading;
-  FTitleLabel.TextSettings.VertAlign := TTextAlign.Center;
-  FTitleLabel.TextSettings.Font.Size := 12;
-  FTitleLabel.StyledSettings := [];
-  FTitleLabel.HitTest := False;
-
-  FTitleEdit := TEdit.Create(Self);
-  FTitleEdit.Parent := FHeader;
-  FTitleEdit.Align := TAlignLayout.Client;
-  FTitleEdit.Margins.Rect := RectF(8, 2, 4, 2);
-  FTitleEdit.Visible := False;
-  FTitleEdit.OnExit := HandleEditExit;
-  FTitleEdit.OnKeyDown := HandleEditKeyDown;
-
-  FFocusBtn := TRectangle.Create(Self);
-  FFocusBtn.Parent := FActionsLayout;
-  FFocusBtn.Align := TAlignLayout.None;
-  FFocusBtn.Width := 20;
-  FFocusBtn.Height := AHost.HeaderHeight - 7;
-  FFocusBtn.Margins.Rect := RectF(0, 3, 4, 3);
-  FFocusBtn.Fill.Kind := TBrushKind.None;
-  FFocusBtn.Stroke.Kind := TBrushKind.None;
-  FFocusBtn.XRadius := 3;
-  FFocusBtn.YRadius := 3;
-  FFocusBtn.HitTest := True;
-  FFocusBtn.OnMouseDown := HandleFocusMouseDown;
-
-  FFocusGlyph := TText.Create(Self);
-  FFocusGlyph.Parent := FFocusBtn;
-  FFocusGlyph.Align := TAlignLayout.Client;
-  FFocusGlyph.Text := 'F';
-  FFocusGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-  FFocusGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FFocusGlyph.TextSettings.Font.Size := 11;
-  FFocusGlyph.HitTest := False;
-
-  FCloseBtn := TRectangle.Create(Self);
-  FCloseBtn.Parent := FActionsLayout;
-  FCloseBtn.Align := TAlignLayout.None;
-  FCloseBtn.Width := 20;
-  FCloseBtn.Height := AHost.HeaderHeight - 7;
-  FCloseBtn.Margins.Rect := RectF(0, 3, 4, 3);
-  FCloseBtn.Fill.Kind := TBrushKind.None;
-  FCloseBtn.Stroke.Kind := TBrushKind.None;
-  FCloseBtn.XRadius := 3;
-  FCloseBtn.YRadius := 3;
-  FCloseBtn.HitTest := True;
-  FCloseBtn.OnMouseDown := HandleCloseMouseDown;
-
-  FCloseGlyph := TText.Create(Self);
-  FCloseGlyph.Parent := FCloseBtn;
-  FCloseGlyph.Align := TAlignLayout.Client;
-  FCloseGlyph.Text := 'x';
-  FCloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-  FCloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FCloseGlyph.TextSettings.Font.Size := 11;
-  FCloseGlyph.HitTest := False;
-
-  FHeader.OnDblClick := HandleHeaderDblClick;
-  LayoutHeaderActionButtons;
-end;
-
-destructor TPaneLeafFrame.Destroy;
-var
-  I: Integer;
-begin
-  for I := FActionButtons.Count - 1 downto 0 do
-    FActionButtons[I].Free;
-  FActionButtons.Free;
-  inherited;
-end;
-
-procedure TPaneLeafFrame.BeginRename;
-var
-  C: TnbDockingPaneContent;
-begin
-  if (FLeaf = nil) or (FTitleEdit = nil) then Exit;
-  C := FLeaf.Content;
-  if C = nil then Exit;
-
-  FDragState := hdsIdle;
-  TControlAccess(FHeader).ReleaseCapture;
-
-  FEditingTitle := True;
-  FTitleLabel.Visible := False;
-  FTitleEdit.Text := C.Caption;
-  FTitleEdit.Visible := True;
-  FTitleEdit.SetFocus;
-  FTitleEdit.SelectAll;
-end;
-
-procedure TPaneLeafFrame.CommitRename;
-var
-  C: TnbDockingPaneContent;
-  NewCaption: string;
-begin
-  if not FEditingTitle then Exit;
-  FEditingTitle := False;
-
-  NewCaption := Trim(FTitleEdit.Text);
-  FTitleEdit.Visible := False;
-  FTitleLabel.Visible := True;
-
-  if FLeaf <> nil then
-  begin
-    C := FLeaf.Content;
-    if (C <> nil) and (NewCaption <> '') then
-      C.Caption := NewCaption
-    else
-      UpdateFromContent;
-  end;
-end;
-
-procedure TPaneLeafFrame.CancelRename;
-begin
-  if not FEditingTitle then Exit;
-  FEditingTitle := False;
-  FTitleEdit.Visible := False;
-  FTitleLabel.Visible := True;
-  UpdateFromContent;
-end;
-
-procedure TPaneLeafFrame.UpdateFromContent;
-var
-  C: TnbDockingPaneContent;
-begin
-  if FLeaf = nil then Exit;
-  C := FLeaf.Content;
-  if C = nil then Exit;
-  if FEditingTitle then Exit;
-
-  Fill.Kind := TBrushKind.Solid;
-  Fill.Color := C.HeaderBgColor;
-  FHeader.Fill.Kind := TBrushKind.Solid;
-  FHeader.Fill.Color := C.HeaderBgColor;
-  FTitleLabel.TextSettings.FontColor := C.HeaderTextColor;
-  FFocusGlyph.TextSettings.FontColor := C.HeaderTextColor;
-  FCloseGlyph.TextSettings.FontColor := C.HeaderTextColor;
-  FTitleLabel.Text := C.Caption;
-  RebuildHeaderActions;
-  SetActive(FLeaf = FHost.ActiveLeaf);
-end;
-
-procedure TPaneLeafFrame.RebuildHeaderActions;
-var
-  C: TnbDockingPaneContent;
-  I: Integer;
-  Action: TDockingPaneHeaderAction;
-  ActionButton: TPaneHeaderActionButton;
-  ActionGlyph: TText;
-begin
-  if (FLeaf = nil) or (FActionsLayout = nil) then Exit;
-  C := FLeaf.Content;
-  if C = nil then Exit;
-
-  for I := FActionButtons.Count - 1 downto 0 do
-    FActionButtons[I].Free;
-  FActionButtons.Clear;
-
-  for I := 0 to C.HeaderActions.Count - 1 do
-  begin
-    Action := C.HeaderActions[I];
-
-    ActionButton := TPaneHeaderActionButton.Create(Self);
-    ActionButton.Parent := FActionsLayout;
-    ActionButton.Align := TAlignLayout.None;
-    ActionButton.Width := 20;
-    ActionButton.Height := FHost.HeaderHeight - 7;
-    ActionButton.Margins.Rect := RectF(0, 3, 4, 3);
-    ActionButton.Fill.Kind := TBrushKind.None;
-    ActionButton.Stroke.Kind := TBrushKind.None;
-    ActionButton.XRadius := 3;
-    ActionButton.YRadius := 3;
-    ActionButton.HitTest := True;
-    ActionButton.ActionId := Action.Id;
-    ActionButton.OnMouseDown := HandleActionMouseDown;
-
-    ActionGlyph := TText.Create(Self);
-    ActionGlyph.Parent := ActionButton;
-    ActionGlyph.Align := TAlignLayout.Client;
-    ActionGlyph.Text := Action.Glyph;
-    ActionGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-    ActionGlyph.TextSettings.VertAlign := TTextAlign.Center;
-    ActionGlyph.TextSettings.Font.Size := 11;
-    ActionGlyph.TextSettings.FontColor := C.HeaderTextColor;
-    ActionGlyph.HitTest := False;
-
-    FActionButtons.Add(ActionButton);
-  end;
-
-  LayoutHeaderActionButtons;
-end;
-
-procedure TPaneLeafFrame.LayoutHeaderActionButtons;
-var
-  I: Integer;
-  FocusVisible: Boolean;
-  Slot: Integer;
-begin
-  if FActionsLayout = nil then Exit;
-
-  FocusVisible := (FHost.Tree.LeafCount >= 2) or FHost.FocusMode;
-  Slot := 0;
-  for I := 0 to FActionButtons.Count - 1 do
-  begin
-    FActionButtons[I].Position.X := Slot * 24;
-    FActionButtons[I].Position.Y := 3;
-    FActionButtons[I].Width := 20;
-    FActionButtons[I].Height := FHost.HeaderHeight - 7;
-    Inc(Slot);
-  end;
-
-  if FFocusBtn <> nil then
-  begin
-    FFocusBtn.Visible := FocusVisible;
-    if FocusVisible then
-    begin
-      FFocusBtn.Position.X := Slot * 24;
-      FFocusBtn.Position.Y := 3;
-      FFocusBtn.Width := 20;
-      FFocusBtn.Height := FHost.HeaderHeight - 7;
-      Inc(Slot);
-    end;
-  end;
-
-  if FCloseBtn <> nil then
-  begin
-    FCloseBtn.Position.X := Slot * 24;
-    FCloseBtn.Position.Y := 3;
-    FCloseBtn.Width := 20;
-    FCloseBtn.Height := FHost.HeaderHeight - 7;
-    Inc(Slot);
-  end;
-  FActionsLayout.Width := Slot * 24;
-  UpdateHeaderActionsVisibility;
-end;
-
-procedure TPaneLeafFrame.UpdateHeaderActionsVisibility;
-begin
-  if FActionsLayout <> nil then
-    FActionsLayout.Visible := (FLeaf = FHost.ActiveLeaf) or FEditingTitle
-      or FHeaderHovered;
-end;
-
-procedure TPaneLeafFrame.SetActive(AIsActive: Boolean);
-var
-  C: TnbDockingPaneContent;
-begin
-  if AIsActive then
-  begin
-    C := nil;
-    if FLeaf <> nil then
-      C := FLeaf.Content;
-    if C <> nil then
-      Stroke.Color := C.HeaderTextColor
-    else
-      Stroke.Color := FHost.ActiveLeafFrameColor;
-    Stroke.Thickness := FHost.LeafFrameThickness;
-  end
-  else
-  begin
-    C := nil;
-    if FLeaf <> nil then
-      C := FLeaf.Content;
-    if C <> nil then
-      Stroke.Color := BlendPaneColor(C.HeaderBgColor, C.HeaderTextColor, 0.42)
-    else
-      Stroke.Color := FHost.LeafFrameColor;
-    Stroke.Thickness := FHost.LeafFrameThickness;
-  end;
-  Padding.Rect := RectF(Stroke.Thickness, Stroke.Thickness,
-                        Stroke.Thickness, Stroke.Thickness);
-  UpdateHeaderActionsVisibility;
-end;
-
-procedure TPaneLeafFrame.SetHeaderVisible(AVisible: Boolean);
-begin
-  if FHeader = nil then Exit;
-  FHeader.Visible := AVisible;
-end;
-
-procedure TPaneLeafFrame.HandleFrameMouseDown(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
-begin
-  if FLeaf = nil then Exit;
-  if FLeaf <> FHost.ActiveLeaf then
-    FHost.ActiveLeaf := FLeaf;
-end;
-
-procedure TPaneLeafFrame.HandleActionMouseDown(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
-var
-  C: TnbDockingPaneContent;
-  ActionButton: TPaneHeaderActionButton;
-begin
-  if Button <> TMouseButton.mbLeft then Exit;
-  if FEditingTitle then Exit;
-  if (FLeaf = nil) or not (Sender is TPaneHeaderActionButton) then Exit;
-
-  if FLeaf <> FHost.ActiveLeaf then
-    FHost.ActiveLeaf := FLeaf;
-
-  C := FLeaf.Content;
-  if C = nil then Exit;
-
-  ActionButton := TPaneHeaderActionButton(Sender);
-  C.ExecuteHeaderAction(ActionButton.ActionId);
-end;
-
-procedure TPaneLeafFrame.HandleFocusMouseDown(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
-begin
-  if Button <> TMouseButton.mbLeft then Exit;
-  if FEditingTitle then Exit;
-  if (FLeaf <> nil) and (FLeaf <> FHost.ActiveLeaf) then
-    FHost.ActiveLeaf := FLeaf;
-  FHost.ToggleFocusMode;
-end;
-
-procedure TPaneLeafFrame.HandleCloseMouseDown(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
-begin
-  if Button <> TMouseButton.mbLeft then Exit;
-  if FEditingTitle then Exit;
-  if (FLeaf <> nil) and (FLeaf <> FHost.ActiveLeaf) then
-    FHost.ActiveLeaf := FLeaf;
-  FHost.CloseActive;
-end;
-
-procedure TPaneLeafFrame.HandleHeaderDblClick(Sender: TObject);
-begin
-  BeginRename;
-end;
-
-procedure TPaneLeafFrame.HandleHeaderMouseDown(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
-begin
-  if Button <> TMouseButton.mbLeft then Exit;
-  if FLeaf = nil then Exit;
-  if FEditingTitle then Exit;
-
-  if FLeaf <> FHost.ActiveLeaf then
-    FHost.ActiveLeaf := FLeaf;
-
-  FDragState := hdsArmed;
-  FDragStartX := X;
-  FDragStartY := Y;
-  TControlAccess(FHeader).Capture;
-end;
-
-procedure TPaneLeafFrame.HandleHeaderMouseMove(Sender: TObject;
-  Shift: TShiftState; X, Y: Single);
-const
-  DRAG_THRESHOLD = 5;
-var
-  ScreenPt: TPointF;
-begin
-  if FDragState = hdsIdle then Exit;
-  if FLeaf = nil then Exit;
-  if FEditingTitle then Exit;
-
-  if FDragState = hdsArmed then
-  begin
-    if (Abs(X - FDragStartX) > DRAG_THRESHOLD) or
-       (Abs(Y - FDragStartY) > DRAG_THRESHOLD) then
-    begin
-      FDragState := hdsDragging;
-      Opacity := 0.6;
-      ScreenPt := FHeader.LocalToScreen(PointF(X, Y));
-      FHost.NotifyHeaderDrag(FLeaf, phdStart, ScreenPt);
-    end;
-  end;
-
-  if FDragState = hdsDragging then
-  begin
-    ScreenPt := FHeader.LocalToScreen(PointF(X, Y));
-    FHost.NotifyHeaderDrag(FLeaf, phdMove, ScreenPt);
-  end;
-end;
-
-procedure TPaneLeafFrame.HandleHeaderMouseUp(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
-var
-  ScreenPt: TPointF;
-  WasDragging: Boolean;
-begin
-  if Button <> TMouseButton.mbLeft then Exit;
-  if FEditingTitle then Exit;
-  TControlAccess(FHeader).ReleaseCapture;
-  WasDragging := FDragState = hdsDragging;
-  FDragState := hdsIdle;
-  Opacity := 1.0;
-  if WasDragging and (FLeaf <> nil) then
-  begin
-    ScreenPt := FHeader.LocalToScreen(PointF(X, Y));
-    FHost.NotifyHeaderDrag(FLeaf, phdEnd, ScreenPt);
-  end;
-end;
-
-procedure TPaneLeafFrame.HandleFrameMouseEnter(Sender: TObject);
-begin
-  FHeaderHovered := True;
-  UpdateHeaderActionsVisibility;
-end;
-
-procedure TPaneLeafFrame.HandleFrameMouseLeave(Sender: TObject);
-begin
-  FHeaderHovered := False;
-  if FDragState = hdsIdle then
-    UpdateHeaderActionsVisibility;
-end;
-
-procedure TPaneLeafFrame.HandleHeaderMouseEnter(Sender: TObject);
-begin
-  HandleFrameMouseEnter(Sender);
-end;
-
-procedure TPaneLeafFrame.HandleHeaderMouseLeave(Sender: TObject);
-begin
-  HandleFrameMouseLeave(Sender);
-end;
-
-procedure TPaneLeafFrame.HandleEditExit(Sender: TObject);
-begin
-  CommitRename;
-end;
-
-procedure TPaneLeafFrame.HandleEditKeyDown(Sender: TObject; var Key: Word;
-  var KeyChar: Char; Shift: TShiftState);
-begin
-  case Key of
-    vkReturn:
-      begin
-        Key := 0;
-        CommitRename;
-      end;
-    vkEscape:
-      begin
-        Key := 0;
-        CancelRename;
-      end;
-  end;
-end;
-
 { TnbDockingPaneHost }
 
 constructor TnbDockingPaneHost.Create(AOwner: TComponent);
@@ -766,12 +173,9 @@ begin
   FTree.OnChanged := HandleTreeChanged;
 
   FBuilding := False;
-  FLeafFrameThickness := 1.0;
-  FLeafFrameColor := TAlphaColor($FFCCCCCC);
-  FActiveLeafFrameColor := TAlphaColor($FF3D6FB5);
-  (* Прозрачно по умолчанию — сквозь зазоры виден фон формы-хоста. *)
+  (* Прозрачно по умолчанию — сквозь зазоры виден фон формы-хоста.
+     Карточки рисуют свой фон сами. *)
   FBackgroundColor := TAlphaColor(0);
-  FHeaderHeight := 24;
   FSplitterSize := 4.0;
   FSplitterColor := TAlphaColor(0);
   FSplitterCovers := TList<TRectangle>.Create;
@@ -807,6 +211,24 @@ begin
   AContent.OnCloseRequest := HandleContentCloseRequest;
   AContent.OnActivateRequest := HandleContentActivateRequest;
   AContent.OnHeaderChanged := HandleContentHeaderChanged;
+  AContent.OnHeaderDrag := HandleContentHeaderDrag;
+end;
+
+procedure TnbDockingPaneHost.HandleContentHeaderChanged(
+  Sender: TnbDockingPaneContent);
+var
+  Leaf: TPaneLeaf;
+begin
+  (* Карточка сама перерисовалась — нам важно только обновить внешних
+     подписчиков (например, подписи табов в TabHost). *)
+  if FAutoMatchBg then
+  begin
+    Leaf := FindLeafByContent(Sender);
+    if (Leaf <> nil) and (Leaf = FActiveLeaf) then
+      SyncBgFromContent(Sender);
+  end;
+  if Assigned(FOnContentHeaderChanged) then
+    FOnContentHeaderChanged(Self, Sender);
 end;
 
 procedure TnbDockingPaneHost.HandleContentSplitRequest(
@@ -840,23 +262,15 @@ begin
   if Leaf <> nil then InternalSetActive(Leaf);
 end;
 
-procedure TnbDockingPaneHost.HandleContentHeaderChanged(
-  Sender: TnbDockingPaneContent);
+procedure TnbDockingPaneHost.HandleContentHeaderDrag(
+  ASender: TnbDockingPaneContent; APhase: TPaneHeaderDragPhase;
+  const AScreenPt: TPointF);
 var
   Leaf: TPaneLeaf;
-  Frame: TRectangle;
 begin
-  Leaf := FindLeafByContent(Sender);
+  Leaf := FindLeafByContent(ASender);
   if Leaf = nil then Exit;
-  Frame := FindFrameRectFor(FRootLayout, Leaf);
-  if (Frame <> nil) and (Frame is TPaneLeafFrame) then
-    TPaneLeafFrame(Frame).UpdateFromContent;
-
-  if FAutoMatchBg and (Leaf = FActiveLeaf) then
-    SyncBgFromContent(Sender);
-
-  if Assigned(FOnContentHeaderChanged) then
-    FOnContentHeaderChanged(Self, Sender);
+  NotifyHeaderDrag(Leaf, APhase, AScreenPt);
 end;
 
 procedure TnbDockingPaneHost.HandleTreeChanged(Sender: TPaneTree);
@@ -983,6 +397,7 @@ begin
 
   (* CloseActive минус Free контента — caller перевесит его на новый Parent. *)
   Result.Deactivate;
+  Result.SetActive(False);
   Result.Parent := nil;
 
   FActiveLeaf := nil;
@@ -1085,17 +500,17 @@ end;
 
 function TnbDockingPaneHost.LeafBounds(ALeaf: TPaneLeaf): TRectF;
 var
-  Rect: TRectangle;
+  Slot: TLayout;
   Pt1, Pt2: TPointF;
 begin
   Result := RectF(0, 0, 0, 0);
   if ALeaf = nil then Exit;
 
-  Rect := FindFrameRectFor(FRootLayout, ALeaf);
-  if Rect = nil then Exit;
+  Slot := FindSlotFor(FRootLayout, ALeaf);
+  if Slot = nil then Exit;
 
-  Pt1 := Rect.LocalToAbsolute(PointF(0, 0));
-  Pt2 := Rect.LocalToAbsolute(PointF(Rect.Width, Rect.Height));
+  Pt1 := Slot.LocalToAbsolute(PointF(0, 0));
+  Pt2 := Slot.LocalToAbsolute(PointF(Slot.Width, Slot.Height));
   Pt1 := Self.AbsoluteToLocal(Pt1);
   Pt2 := Self.AbsoluteToLocal(Pt2);
   Result := RectF(Pt1.X, Pt1.Y, Pt2.X, Pt2.Y);
@@ -1122,8 +537,8 @@ begin
   Result := Found;
 end;
 
-function TnbDockingPaneHost.FindFrameRectFor(
-  AContainer: TFmxObject; ALeaf: TPaneLeaf): TRectangle;
+function TnbDockingPaneHost.FindSlotFor(AContainer: TFmxObject;
+  ALeaf: TPaneLeaf): TLayout;
 var
   I: Integer;
   Child: TFmxObject;
@@ -1133,11 +548,9 @@ begin
   for I := 0 to AContainer.ChildrenCount - 1 do
   begin
     Child := AContainer.Children[I];
-    if (Child is TRectangle)
-       and (TRectangle(Child).TagObject is TPaneLeaf)
-       and (TPaneLeaf(TRectangle(Child).TagObject) = ALeaf) then
-      Exit(TRectangle(Child));
-    Result := FindFrameRectFor(Child, ALeaf);
+    if (Child is TLayout) and (TLayout(Child).TagObject = ALeaf) then
+      Exit(TLayout(Child));
+    Result := FindSlotFor(Child, ALeaf);
     if Result <> nil then Exit;
   end;
 end;
@@ -1155,18 +568,20 @@ begin
   OldLeaf := FActiveLeaf;
 
   if (OldLeaf <> nil) and (OldLeaf.Content <> nil) then
+  begin
     OldLeaf.Content.Deactivate;
+    OldLeaf.Content.SetActive(False);
+  end;
 
   FActiveLeaf := ALeaf;
 
   if (FActiveLeaf <> nil) and (FActiveLeaf.Content <> nil) then
   begin
+    FActiveLeaf.Content.SetActive(True);
     FActiveLeaf.Content.Activate;
     if FAutoMatchBg then
       SyncBgFromContent(FActiveLeaf.Content);
   end;
-
-  UpdateActiveFrames;
 
   if Assigned(FOnActiveLeafChanged) then
     FOnActiveLeafChanged(Self, OldLeaf, FActiveLeaf);
@@ -1198,24 +613,6 @@ begin
 end;
 
 procedure TnbDockingPaneHost.RebuildVisualTree;
-
-  procedure ApplyHeaderVisibility(AContainer: TFmxObject; AVisible: Boolean);
-  var
-    I: Integer;
-    Child: TFmxObject;
-  begin
-    if AContainer = nil then Exit;
-    for I := 0 to AContainer.ChildrenCount - 1 do
-    begin
-      Child := AContainer.Children[I];
-      if Child is TPaneLeafFrame then
-        TPaneLeafFrame(Child).SetHeaderVisible(AVisible);
-      ApplyHeaderVisibility(Child, AVisible);
-    end;
-  end;
-
-var
-  ShowHeaders: Boolean;
 begin
   if FBuilding then Exit;
   FBuilding := True;
@@ -1240,11 +637,10 @@ begin
     if FTree.Root <> nil then
       BuildNode(FTree.Root, FRootLayout, TAlignLayout.Client, 0);
 
-    UpdateActiveFrames;
-
-    (* Termius-style: один лист — заголовок прячем, имя есть на табе. *)
-    ShowHeaders := FTree.LeafCount >= 2;
-    ApplyHeaderVisibility(FRootLayout, ShowHeaders);
+    (* После rebuild активность нужно восстановить — карточка-то живая,
+       но её Stroke могла сброситься, если контент пересоздан. *)
+    if (FActiveLeaf <> nil) and (FActiveLeaf.Content <> nil) then
+      FActiveLeaf.Content.SetActive(True);
   finally
     FBuilding := False;
   end;
@@ -1255,7 +651,6 @@ var
   Sidebar: TLayout;
   SidebarBg: TRectangle;
   TitleLabel, ItemTitle, ItemSubTitle: TLabel;
-  ActiveFrame: TPaneLeafFrame;
   Item: TPaneFocusItem;
   TopOffset: Single;
   CountText: string;
@@ -1349,9 +744,9 @@ begin
       TopOffset := TopOffset + 52;
     end);
 
-  ActiveFrame := BuildLeaf(FActiveLeaf, FRootLayout, TAlignLayout.Client, 0);
-  ActiveFrame.SetHeaderVisible(True);
-  UpdateActiveFrames;
+  BuildLeaf(FActiveLeaf, FRootLayout, TAlignLayout.Client, 0);
+  if FActiveLeaf.Content <> nil then
+    FActiveLeaf.Content.SetActive(True);
 end;
 
 function TnbDockingPaneHost.BuildNode(ANode: TPaneNode; AContainer: TFmxObject;
@@ -1364,24 +759,25 @@ begin
 end;
 
 function TnbDockingPaneHost.BuildLeaf(ALeaf: TPaneLeaf; AContainer: TFmxObject;
-  AAlign: TAlignLayout; ASize: Single): TPaneLeafFrame;
+  AAlign: TAlignLayout; ASize: Single): TLayout;
 var
-  Frame: TPaneLeafFrame;
+  Slot: TLayout;
 begin
-  Frame := TPaneLeafFrame.Create(Self, ALeaf);
-  Frame.Parent := AContainer;
-  Frame.Align := AAlign;
-  if AAlign = TAlignLayout.Left then Frame.Width := ASize
-  else if AAlign = TAlignLayout.Top then Frame.Height := ASize;
+  (* Слот — тонкий контейнер; вся визуальная карточка живёт в Content. *)
+  Slot := TLayout.Create(Self);
+  Slot.Parent := AContainer;
+  Slot.Align := AAlign;
+  if AAlign = TAlignLayout.Left then Slot.Width := ASize
+  else if AAlign = TAlignLayout.Top then Slot.Height := ASize;
+  Slot.TagObject := ALeaf;
 
   if ALeaf.Content <> nil then
   begin
-    ALeaf.Content.Parent := Frame;
+    ALeaf.Content.Parent := Slot;
     ALeaf.Content.Align := TAlignLayout.Client;
   end;
 
-  Frame.UpdateFromContent;
-  Result := Frame;
+  Result := Slot;
 end;
 
 function TnbDockingPaneHost.BuildSplit(ASplit: TPaneSplit; AContainer: TFmxObject;
@@ -1589,33 +985,6 @@ begin
      rebuild визуала не нужен. *)
   for I := 0 to High(Sizes) do
     ASplit.SetSize(I, Sizes[I]);
-end;
-
-procedure TnbDockingPaneHost.UpdateActiveFrames;
-
-  procedure ApplyTo(AContainer: TFmxObject);
-  var
-    I: Integer;
-    Child: TFmxObject;
-    Frame: TPaneLeafFrame;
-    IsActive: Boolean;
-  begin
-    if AContainer = nil then Exit;
-    for I := 0 to AContainer.ChildrenCount - 1 do
-    begin
-      Child := AContainer.Children[I];
-      if Child is TPaneLeafFrame then
-      begin
-        Frame := TPaneLeafFrame(Child);
-        IsActive := (Frame.Leaf = FActiveLeaf) and (FActiveLeaf <> nil);
-        Frame.SetActive(IsActive);
-      end;
-      ApplyTo(Child);
-    end;
-  end;
-
-begin
-  ApplyTo(FRootLayout);
 end;
 
 end.

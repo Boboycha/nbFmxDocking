@@ -373,8 +373,9 @@ begin
   FPaneHost.OnHeaderDrag := AOwner.HandlePaneHostHeaderDrag;
 
   FPaneHost.BackgroundColor       := AOwner.PaneHostBgColor;
-  FPaneHost.LeafFrameColor        := AOwner.PaneHostLeafFrameColor;
-  FPaneHost.ActiveLeafFrameColor  := AOwner.PaneHostActiveLeafFrameColor;
+  (* LeafFrameColor/ActiveLeafFrameColor больше не нужны — рамка-индикатор
+     активности теперь часть карточки (TnbDockingPaneContent.Stroke),
+     выводится из HeaderBgColor/HeaderTextColor самого контента. *)
   FPaneHost.SplitterColor         := AOwner.PaneHostSplitterColor;
   FPaneHost.AutoMatchBg           := AOwner.PaneHostAutoMatchBg;
 end;
@@ -950,7 +951,9 @@ begin
   FTabBarActionVisible := False;
   FTabAddVisible := True;
 
-  FPaneHostBgColor              := TAlphaColor($FFE5E5E5);
+  (* Прозрачно по умолчанию — карточки рисуют свой фон сами, между ними
+     сквозь зазоры виден фон формы-хоста. *)
+  FPaneHostBgColor              := TAlphaColor(0);
   FPaneHostLeafFrameColor       := TAlphaColor($FFCCCCCC);
   FPaneHostActiveLeafFrameColor := TAlphaColor($FF3D6FB5);
   FPaneHostSplitterColor        := TAlphaColor(0);
