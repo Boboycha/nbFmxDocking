@@ -91,6 +91,8 @@ type
     FActiveStrokeColor: TAlphaColor;
     FActive: Boolean;
     FEditingTitle: Boolean;
+    FHeaderDragEnabled: Boolean;
+    FAlwaysShowActive: Boolean;
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
 
@@ -107,6 +109,9 @@ type
     procedure SetCaption(const AValue: string);
     procedure SetHeaderBgColor(AValue: TAlphaColor);
     procedure SetHeaderTextColor(AValue: TAlphaColor);
+    procedure SetHeaderVisible(AValue: Boolean);
+    function GetHeaderVisible: Boolean;
+    procedure SetAlwaysShowActive(AValue: Boolean);
     procedure ApplyHeaderColors;
     procedure DoHeaderChanged;
     procedure UpdateStrokeForActive;
@@ -175,6 +180,21 @@ type
     property Header: TRectangle read FHeader;
     property Footer: TRectangle read FFooter;
     property Active: Boolean read FActive;
+    (* True (по умолчанию) — header можно тащить, эмитируется OnHeaderDrag.
+       False — drag-UX полностью отключён (для встроенных sub-pane'ов,
+       которые не должны перетаскиваться между host'ами). *)
+    property HeaderDragEnabled: Boolean read FHeaderDragEnabled
+      write FHeaderDragEnabled;
+    (* True (по умолчанию) — rtHeader виден сверху карточки.
+       False — header скрыт и не занимает места: контент начинается прямо
+       от верхнего края карточки. Полезно для менеджеров, где имя уже
+       показано в табе и в собственных sub-pane'ах. *)
+    property HeaderVisible: Boolean read GetHeaderVisible write SetHeaderVisible;
+    (* True — Stroke всегда рисуется яркой (как у активного pane), даже
+     если SetActive(False). Для менеджер-карточек, у которых индикатор
+     активности не нужен, а нужна стабильно видимая рамка. *)
+    property AlwaysShowActive: Boolean read FAlwaysShowActive
+      write SetAlwaysShowActive;
     property HeaderActions: TObjectList<TDockingPaneHeaderAction>
       read FHeaderActions;
 
@@ -264,6 +284,7 @@ begin
 
   FHeaderBgColor := TAlphaColor($FF2A2A2A);
   FHeaderTextColor := TAlphaColor($FFE0E0E0);
+  FHeaderDragEnabled := True;
 
   FHeaderActions := TObjectList<TDockingPaneHeaderAction>.Create(True);
   FActionButtons := TList<TPaneHeaderActionButton>.Create;
@@ -358,7 +379,7 @@ end;
 
 procedure TnbDockingPaneContent.UpdateStrokeForActive;
 begin
-  if FActive then
+  if FActive or FAlwaysShowActive then
     Stroke.Color := FActiveStrokeColor
   else
     Stroke.Color := FInactiveStrokeColor;
@@ -392,6 +413,30 @@ begin
   FHeaderTextColor := AValue;
   ApplyHeaderColors;
   DoHeaderChanged;
+end;
+
+procedure TnbDockingPaneContent.SetHeaderVisible(AValue: Boolean);
+begin
+  if FHeader = nil then Exit;
+  if FHeader.Visible = AValue then Exit;
+  FHeader.Visible := AValue;
+  (* Height=0 при скрытии — иначе FMX Align=MostTop может оставить gap. *)
+  if AValue then
+    FHeader.Height := HEADER_HEIGHT
+  else
+    FHeader.Height := 0;
+end;
+
+function TnbDockingPaneContent.GetHeaderVisible: Boolean;
+begin
+  Result := (FHeader <> nil) and FHeader.Visible;
+end;
+
+procedure TnbDockingPaneContent.SetAlwaysShowActive(AValue: Boolean);
+begin
+  if FAlwaysShowActive = AValue then Exit;
+  FAlwaysShowActive := AValue;
+  UpdateStrokeForActive;
 end;
 
 procedure TnbDockingPaneContent.DoHeaderChanged;
@@ -463,6 +508,7 @@ begin
   if Button <> TMouseButton.mbLeft then Exit;
   if FEditingTitle then Exit;
   RequestActivate;
+  if not FHeaderDragEnabled then Exit;
   FDragState := hdsArmed;
   FDragStartX := X;
   FDragStartY := Y;
