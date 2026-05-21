@@ -20,7 +20,7 @@ uses
 const
   TAB_BAR_HEIGHT              = 34;
   TAB_BUTTON_MIN_WIDTH        = 72;
-  TAB_BUTTON_CLOSE_SIZE       = 18;
+  TAB_BUTTON_CLOSE_SIZE       = 20;
   TAB_BUTTON_GROUP_GLYPH_WIDTH = 16;
   TAB_BUTTON_PADDING          = 8;
   TAB_ADD_BUTTON_WIDTH        = 32;
@@ -31,6 +31,10 @@ const
   TAB_TEXT_AVG_CHAR_WIDTH     = 7.5;
   TAB_GROUP_CAPTION           = 'Group';
   TAB_CLOSE_HOVER_COLOR       = TAlphaColor($30000000);
+  TAB_ICON_FONT               = 'Segoe MDL2 Assets';
+  TAB_ICON_GROUP              = #$E902;
+  TAB_ICON_CLOSE              = #$E711;
+  TAB_ICON_ADD                = #$E710;
 
 type
   TnbDockingTabHost = class;
@@ -234,6 +238,12 @@ type
     procedure PaneHeader_End(const AScreenPt: TPointF);
     procedure PaneHeader_ShowTabBarHint;
     procedure PaneHeader_HideTabBarHint;
+    procedure SetTabBarColor(AValue: TAlphaColor);
+    procedure SetTabActiveColor(AValue: TAlphaColor);
+    procedure SetTabInactiveColor(AValue: TAlphaColor);
+    procedure SetTabHoverColor(AValue: TAlphaColor);
+    procedure SetTabTextColor(AValue: TAlphaColor);
+    procedure SetAccentColor(AValue: TAlphaColor);
     procedure SetTabBarActionText(const AValue: string);
     procedure SetTabBarActionVisible(AValue: Boolean);
     procedure SetTabAddVisible(AValue: Boolean);
@@ -260,12 +270,12 @@ type
     property OnTabBarActionClick: TTabBarActionEvent
       read FOnTabBarActionClick write FOnTabBarActionClick;
   published
-    property TabBarColor: TAlphaColor read FTabBarColor write FTabBarColor;
-    property TabActiveColor: TAlphaColor read FTabActiveColor write FTabActiveColor;
-    property TabInactiveColor: TAlphaColor read FTabInactiveColor write FTabInactiveColor;
-    property TabHoverColor: TAlphaColor read FTabHoverColor write FTabHoverColor;
-    property TabTextColor: TAlphaColor read FTabTextColor write FTabTextColor;
-    property AccentColor: TAlphaColor read FAccentColor write FAccentColor;
+    property TabBarColor: TAlphaColor read FTabBarColor write SetTabBarColor;
+    property TabActiveColor: TAlphaColor read FTabActiveColor write SetTabActiveColor;
+    property TabInactiveColor: TAlphaColor read FTabInactiveColor write SetTabInactiveColor;
+    property TabHoverColor: TAlphaColor read FTabHoverColor write SetTabHoverColor;
+    property TabTextColor: TAlphaColor read FTabTextColor write SetTabTextColor;
+    property AccentColor: TAlphaColor read FAccentColor write SetAccentColor;
     property TabBarActionText: string read FTabBarActionText
       write SetTabBarActionText;
     property TabBarActionVisible: Boolean read FTabBarActionVisible
@@ -450,15 +460,16 @@ begin
   FCaptionEdit.OnExit := HandleEditExit;
   FCaptionEdit.OnKeyDown := HandleEditKeyDown;
 
-  (* Glyph # обозначает группу — drag в split-зону для таких табов отключён. *)
+  (* Glyph обозначает группу — drag в split-зону для таких табов отключён. *)
   FGroupGlyph := TText.Create(Self);
   FGroupGlyph.Parent := Self;
   FGroupGlyph.Align := TAlignLayout.None;
   FGroupGlyph.Width := 0;
-  FGroupGlyph.Text := '#';
+  FGroupGlyph.Text := TAB_ICON_GROUP;
   FGroupGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FGroupGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FGroupGlyph.TextSettings.Font.Size := 12;
+  FGroupGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
+  FGroupGlyph.TextSettings.Font.Size := 14;
   FGroupGlyph.HitTest := False;
   FGroupGlyph.Visible := False;
 
@@ -478,10 +489,11 @@ begin
   FCloseGlyph := TText.Create(Self);
   FCloseGlyph.Parent := FCloseBtn;
   FCloseGlyph.Align := TAlignLayout.Client;
-  FCloseGlyph.Text := 'x';
+  FCloseGlyph.Text := TAB_ICON_CLOSE;
   FCloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FCloseGlyph.TextSettings.Font.Size := 11;
+  FCloseGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
+  FCloseGlyph.TextSettings.Font.Size := 13;
   FCloseGlyph.HitTest := False;
 
   OnMouseDown := HandleMouseDown;
@@ -1050,10 +1062,11 @@ begin
   FAddGlyph := TText.Create(Self);
   FAddGlyph.Parent := FAddButton;
   FAddGlyph.Align := TAlignLayout.Client;
-  FAddGlyph.Text := '+';
+  FAddGlyph.Text := TAB_ICON_ADD;
   FAddGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FAddGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FAddGlyph.TextSettings.Font.Size := 18;
+  FAddGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
+  FAddGlyph.TextSettings.Font.Size := 15;
   FAddGlyph.TextSettings.FontColor := FTabTextColor;
   FAddGlyph.HitTest := False;
 
@@ -1117,6 +1130,62 @@ procedure TnbDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.None;
+end;
+
+procedure TnbDockingTabHost.SetTabBarColor(AValue: TAlphaColor);
+begin
+  if FTabBarColor = AValue then Exit;
+  FTabBarColor := AValue;
+  UpdateTabBarVisual;
+end;
+
+procedure TnbDockingTabHost.SetTabActiveColor(AValue: TAlphaColor);
+var
+  I: Integer;
+begin
+  if FTabActiveColor = AValue then Exit;
+  FTabActiveColor := AValue;
+  for I := 0 to FTabs.Count - 1 do
+    if FTabs[I].FButton <> nil then
+      FTabs[I].FButton.UpdateVisual(FTabs[I] = FActiveTab);
+end;
+
+procedure TnbDockingTabHost.SetTabInactiveColor(AValue: TAlphaColor);
+var
+  I: Integer;
+begin
+  if FTabInactiveColor = AValue then Exit;
+  FTabInactiveColor := AValue;
+  for I := 0 to FTabs.Count - 1 do
+    if FTabs[I].FButton <> nil then
+      FTabs[I].FButton.UpdateVisual(FTabs[I] = FActiveTab);
+end;
+
+procedure TnbDockingTabHost.SetTabHoverColor(AValue: TAlphaColor);
+begin
+  if FTabHoverColor = AValue then Exit;
+  FTabHoverColor := AValue;
+  UpdateTabBarVisual;
+end;
+
+procedure TnbDockingTabHost.SetTabTextColor(AValue: TAlphaColor);
+var
+  I: Integer;
+begin
+  if FTabTextColor = AValue then Exit;
+  FTabTextColor := AValue;
+  UpdateTabBarVisual;
+  for I := 0 to FTabs.Count - 1 do
+    if FTabs[I].FButton <> nil then
+      FTabs[I].FButton.UpdateVisual(FTabs[I] = FActiveTab);
+end;
+
+procedure TnbDockingTabHost.SetAccentColor(AValue: TAlphaColor);
+begin
+  if FAccentColor = AValue then Exit;
+  FAccentColor := AValue;
+  if FDropIndicator <> nil then
+    FDropIndicator.Fill.Color := FAccentColor;
 end;
 
 procedure TnbDockingTabHost.SetTabBarActionText(const AValue: string);

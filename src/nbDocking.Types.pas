@@ -224,17 +224,36 @@ implementation
 
 const
   HEADER_HEIGHT       = 24;
-  ACTION_BTN_WIDTH    = 20;
-  ACTION_BTN_SLOT     = 24;   (* ширина кнопки + правый отступ *)
+  ACTION_BTN_WIDTH    = 22;
+  ACTION_BTN_SLOT     = 26;   (* ширина кнопки + правый отступ *)
   CARD_RADIUS         = 10;
   CARD_PADDING_OTHER  = 2;
   CARD_PADDING_BOTTOM = 8;    (* защита скруглённого нижнего угла *)
   STROKE_THICKNESS    = 1.0;
   DRAG_THRESHOLD      = 5;
+  DOCK_ICON_FONT      = 'Segoe MDL2 Assets';
+  DOCK_ICON_CANCEL    = #$E711;
+  DOCK_ICON_BROADCAST = #$E909;
+  DOCK_ICON_FOLDER    = #$E8B7;
+  DOCK_ICON_THEME     = #$E790;
 
 type
   (* Cast-наследник для доступа к protected Capture/ReleaseCapture. *)
   TControlAccess = class(TControl);
+
+function HeaderActionIconFor(const AId, AGlyph: string): string;
+begin
+  if SameText(AId, 'close') or SameText(AGlyph, 'x') then
+    Exit(DOCK_ICON_CANCEL);
+  if SameText(AId, 'broadcast') or SameText(AGlyph, 'B') then
+    Exit(DOCK_ICON_BROADCAST);
+  if SameText(AId, 'sftp') or SameText(AGlyph, 'S') then
+    Exit(DOCK_ICON_FOLDER);
+  if SameText(AId, 'theme') or SameText(AGlyph, 'T') then
+    Exit(DOCK_ICON_THEME);
+
+  Result := AGlyph;
+end;
 
 function BlendColor(AColor1, AColor2: TAlphaColor;
   AWeight2: Single): TAlphaColor;
@@ -361,14 +380,14 @@ begin
   FActiveStrokeColor := FHeaderTextColor;
   FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.42);
 
-  (* Header action buttons keep their chrome in FMX styles; the glyph color
-     follows the pane header text so split/close actions stay readable. *)
+  (* Header action buttons are flat; only glyph color follows pane header. *)
   for I := 0 to FActionButtons.Count - 1 do
   begin
     Btn := FActionButtons[I];
-    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor];
+    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
+      TStyledSetting.Family, TStyledSetting.Size];
+    Btn.TextSettings.Font.Family := DOCK_ICON_FONT;
     Btn.TextSettings.FontColor := FHeaderTextColor;
-    Btn.ApplyStyleLookup;
   end;
 
   UpdateStrokeForActive;
@@ -719,12 +738,13 @@ begin
     Btn.Width := ACTION_BTN_WIDTH;
     Btn.Height := HEADER_HEIGHT - 7;
     Btn.Margins.Rect := RectF(0, 3, 4, 3);
-    Btn.StyleLookup := 'buttonstyle_secondary';
-    Btn.Text := Action.Glyph;
-    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor, TStyledSetting.Size];
+    Btn.Text := HeaderActionIconFor(Action.Id, Action.Glyph);
+    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
+      TStyledSetting.Family, TStyledSetting.Size];
     Btn.TextSettings.HorzAlign := TTextAlign.Center;
     Btn.TextSettings.VertAlign := TTextAlign.Center;
-    Btn.TextSettings.Font.Size := 11;
+    Btn.TextSettings.Font.Family := DOCK_ICON_FONT;
+    Btn.TextSettings.Font.Size := 13;
     Btn.TextSettings.FontColor := FHeaderTextColor;
     Btn.TextSettings.Trimming := TTextTrimming.None;
     Btn.HitTest := True;
@@ -735,8 +755,6 @@ begin
       Btn.Hint := Action.Hint;
       Btn.ShowHint := True;
     end;
-    Btn.ApplyStyleLookup;
-
     FActionButtons.Add(Btn);
   end;
 
