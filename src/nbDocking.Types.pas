@@ -70,8 +70,8 @@ type
     property OnExecute: TPaneHeaderActionEvent read FOnExecute write FOnExecute;
   end;
 
-  (* Кнопка action в rtHeader — наследник TRectangle с привязанным id. *)
-  TPaneHeaderActionButton = class(TRectangle)
+  (* Кнопка action в rtHeader — styled FMX button с привязанным id. *)
+  TPaneHeaderActionButton = class(TSpeedButton)
   public
     ActionId: string;
   end;
@@ -351,7 +351,6 @@ procedure TnbDockingPaneContent.ApplyHeaderColors;
 var
   I: Integer;
   Btn: TPaneHeaderActionButton;
-  Child: TFmxObject;
 begin
   Fill.Color := FHeaderBgColor;
   if FCaptionLabel <> nil then
@@ -362,16 +361,14 @@ begin
   FActiveStrokeColor := FHeaderTextColor;
   FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.42);
 
-  (* Перекрасить глифы action-кнопок. *)
+  (* Header action buttons keep their chrome in FMX styles; the glyph color
+     follows the pane header text so split/close actions stay readable. *)
   for I := 0 to FActionButtons.Count - 1 do
   begin
     Btn := FActionButtons[I];
-    if Btn.ChildrenCount > 0 then
-    begin
-      Child := Btn.Children[0];
-      if Child is TText then
-        TText(Child).TextSettings.FontColor := FHeaderTextColor;
-    end;
+    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor];
+    Btn.TextSettings.FontColor := FHeaderTextColor;
+    Btn.ApplyStyleLookup;
   end;
 
   UpdateStrokeForActive;
@@ -708,7 +705,6 @@ var
   I: Integer;
   Action: TDockingPaneHeaderAction;
   Btn: TPaneHeaderActionButton;
-  Glyph: TText;
 begin
   for I := FActionButtons.Count - 1 downto 0 do
     FActionButtons[I].Free;
@@ -723,25 +719,23 @@ begin
     Btn.Width := ACTION_BTN_WIDTH;
     Btn.Height := HEADER_HEIGHT - 7;
     Btn.Margins.Rect := RectF(0, 3, 4, 3);
-    Btn.Fill.Kind := TBrushKind.None;
-    Btn.Stroke.Kind := TBrushKind.None;
-    Btn.XRadius := 3;
-    Btn.YRadius := 3;
+    Btn.StyleLookup := 'buttonstyle_secondary';
+    Btn.Text := Action.Glyph;
+    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor, TStyledSetting.Size];
+    Btn.TextSettings.HorzAlign := TTextAlign.Center;
+    Btn.TextSettings.VertAlign := TTextAlign.Center;
+    Btn.TextSettings.Font.Size := 11;
+    Btn.TextSettings.FontColor := FHeaderTextColor;
+    Btn.TextSettings.Trimming := TTextTrimming.None;
     Btn.HitTest := True;
     Btn.ActionId := Action.Id;
     Btn.OnMouseDown := HandleActionMouseDown;
     if Action.Hint <> '' then
+    begin
       Btn.Hint := Action.Hint;
-
-    Glyph := TText.Create(Self);
-    Glyph.Parent := Btn;
-    Glyph.Align := TAlignLayout.Client;
-    Glyph.Text := Action.Glyph;
-    Glyph.TextSettings.HorzAlign := TTextAlign.Center;
-    Glyph.TextSettings.VertAlign := TTextAlign.Center;
-    Glyph.TextSettings.Font.Size := 11;
-    Glyph.TextSettings.FontColor := FHeaderTextColor;
-    Glyph.HitTest := False;
+      Btn.ShowHint := True;
+    end;
+    Btn.ApplyStyleLookup;
 
     FActionButtons.Add(Btn);
   end;
