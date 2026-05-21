@@ -1,4 +1,4 @@
-unit nbDocking.Types;
+﻿unit nbDocking.Types;
 
 (*
   TnbDockingPaneContent — самодостаточная карточка (TRectangle):

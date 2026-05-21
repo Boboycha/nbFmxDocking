@@ -1,4 +1,4 @@
-unit nbDocking.PaneHost;
+﻿unit nbDocking.PaneHost;
 
 (*
   Инварианты владения и rebuild-а:
