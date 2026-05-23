@@ -183,39 +183,40 @@ type
     (* True (по умолчанию) — header можно тащить, эмитируется OnHeaderDrag.
        False — drag-UX полностью отключён (для встроенных sub-pane'ов,
        которые не должны перетаскиваться между host'ами). *)
-    property HeaderDragEnabled: Boolean read FHeaderDragEnabled
-      write FHeaderDragEnabled;
     (* True (по умолчанию) — rtHeader виден сверху карточки.
        False — header скрыт и не занимает места: контент начинается прямо
        от верхнего края карточки. Полезно для менеджеров, где имя уже
        показано в табе и в собственных sub-pane'ах. *)
-    property HeaderVisible: Boolean read GetHeaderVisible write SetHeaderVisible;
     (* True — Stroke всегда рисуется яркой (как у активного pane), даже
      если SetActive(False). Для менеджер-карточек, у которых индикатор
      активности не нужен, а нужна стабильно видимая рамка. *)
-    property AlwaysShowActive: Boolean read FAlwaysShowActive
-      write SetAlwaysShowActive;
     property HeaderActions: TObjectList<TDockingPaneHeaderAction>
       read FHeaderActions;
 
     property OnSplitRequest: TPaneSplitRequestEvent
       read FOnSplitRequest write FOnSplitRequest;
-    property OnCloseRequest: TPaneCloseRequestEvent
-      read FOnCloseRequest write FOnCloseRequest;
-    property OnActivateRequest: TPaneActivateRequestEvent
-      read FOnActivateRequest write FOnActivateRequest;
     property OnHeaderDrag: TContentHeaderDragEvent
       read FOnHeaderDrag write FOnHeaderDrag;
-    property OnRenamed: TPaneRenamedEvent
-      read FOnRenamed write FOnRenamed;
-    property OnHeaderChanged: TPaneHeaderChangedEvent
-      read FOnHeaderChanged write FOnHeaderChanged;
   published
     property Caption: string read FCaption write SetCaption;
+    property HeaderVisible: Boolean read GetHeaderVisible write SetHeaderVisible
+      default True;
+    property HeaderDragEnabled: Boolean read FHeaderDragEnabled
+      write FHeaderDragEnabled default True;
+    property AlwaysShowActive: Boolean read FAlwaysShowActive
+      write SetAlwaysShowActive default False;
     property HeaderBgColor: TAlphaColor read FHeaderBgColor
       write SetHeaderBgColor default TAlphaColor($FF2A2A2A);
     property HeaderTextColor: TAlphaColor read FHeaderTextColor
       write SetHeaderTextColor default TAlphaColor($FFE0E0E0);
+    property OnCloseRequest: TPaneCloseRequestEvent
+      read FOnCloseRequest write FOnCloseRequest;
+    property OnActivateRequest: TPaneActivateRequestEvent
+      read FOnActivateRequest write FOnActivateRequest;
+    property OnRenamed: TPaneRenamedEvent
+      read FOnRenamed write FOnRenamed;
+    property OnHeaderChanged: TPaneHeaderChangedEvent
+      read FOnHeaderChanged write FOnHeaderChanged;
   end;
 
   EDockingError = class(Exception);

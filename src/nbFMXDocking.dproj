@@ -83,6 +83,8 @@
     <PropertyGroup Condition="'$(Base)'!=''">
         <DCC_DcuOutput>.\$(Platform)\$(Config)</DCC_DcuOutput>
         <DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>
+        <DCC_BplOutput>..\bin\$(Platform)\$(Config)</DCC_BplOutput>
+        <DCC_DcpOutput>..\bin\$(Platform)\$(Config)</DCC_DcpOutput>
         <DCC_E>false</DCC_E>
         <DCC_N>false</DCC_N>
         <DCC_S>false</DCC_S>
