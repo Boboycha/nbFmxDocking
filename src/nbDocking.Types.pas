@@ -135,6 +135,8 @@ type
     procedure HandleCloseAction(Sender: TnbDockingPaneContent;
       const AActionId: string);
   protected
+    procedure DoAddObject(const AObject: TFmxObject); override;
+
     (* Переопределить в потомке для реакции на активацию/деактивацию pane.
        Имена с префиксом DoPane*, чтобы не маскировать виртуальные
        DoActivate/DoDeactivate у TControl. *)
@@ -313,6 +315,8 @@ begin
      на фоне карточки (Fill.Color = HeaderBgColor). *)
   FHeader := TRectangle.Create(Self);
   FHeader.Parent := Self;
+  FHeader.Stored := False;
+  FHeader.Locked := True;
   FHeader.Align := TAlignLayout.MostTop;
   FHeader.Height := HEADER_HEIGHT;
   FHeader.Fill.Kind := TBrushKind.None;
@@ -327,12 +331,16 @@ begin
      отдал Caption (Align=Client) только остаток ширины. *)
   FActionsBar := TLayout.Create(Self);
   FActionsBar.Parent := FHeader;
+  FActionsBar.Stored := False;
+  FActionsBar.Locked := True;
   FActionsBar.Align := TAlignLayout.Right;
   FActionsBar.Width := 0;
   FActionsBar.HitTest := True;
 
   FCaptionLabel := TLabel.Create(Self);
   FCaptionLabel.Parent := FHeader;
+  FCaptionLabel.Stored := False;
+  FCaptionLabel.Locked := True;
   FCaptionLabel.Align := TAlignLayout.Client;
   FCaptionLabel.Margins.Rect := RectF(8, 0, 4, 0);
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
@@ -343,6 +351,8 @@ begin
 
   FCaptionEdit := TEdit.Create(Self);
   FCaptionEdit.Parent := FHeader;
+  FCaptionEdit.Stored := False;
+  FCaptionEdit.Locked := True;
   FCaptionEdit.Align := TAlignLayout.Client;
   FCaptionEdit.Margins.Rect := RectF(8, 2, 4, 2);
   FCaptionEdit.Visible := False;
@@ -365,6 +375,16 @@ begin
   FActionButtons.Free;
   FHeaderActions.Free;
   inherited;
+end;
+
+procedure TnbDockingPaneContent.DoAddObject(const AObject: TFmxObject);
+begin
+  inherited;
+
+  if (AObject is TnbDockingPaneContent)
+     and (AObject.Parent = Self)
+     and (Parent <> nil) then
+    AObject.Parent := Parent;
 end;
 
 procedure TnbDockingPaneContent.ApplyHeaderColors;
@@ -735,6 +755,8 @@ begin
     Action := FHeaderActions[I];
     Btn := TPaneHeaderActionButton.Create(Self);
     Btn.Parent := FActionsBar;
+    Btn.Stored := False;
+    Btn.Locked := True;
     Btn.Align := TAlignLayout.None;
     Btn.Width := ACTION_BTN_WIDTH;
     Btn.Height := HEADER_HEIGHT - 7;
@@ -781,6 +803,8 @@ begin
   if FFooter <> nil then Exit;
   FFooter := TRectangle.Create(Self);
   FFooter.Parent := Self;
+  FFooter.Stored := False;
+  FFooter.Locked := True;
   FFooter.Align := TAlignLayout.MostBottom;
   FFooter.Height := 24;
   FFooter.Fill.Kind := TBrushKind.None;

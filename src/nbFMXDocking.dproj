@@ -169,6 +169,7 @@
         <DCCReference Include="nbDocking.Types.pas"/>
         <DCCReference Include="nbDocking.PaneTree.pas"/>
         <DCCReference Include="nbDocking.PaneHost.pas"/>
+        <DCCReference Include="nbDocking.DropOverlay.pas"/>
         <DCCReference Include="nbDocking.TabHost.pas"/>
         <DCCReference Include="nbDocking.Demo.pas"/>
         <DCCReference Include="Reg_nbFMXDocking.pas"/>

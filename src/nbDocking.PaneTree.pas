@@ -89,6 +89,7 @@ type
     constructor Create;
     destructor Destroy; override;
 
+    procedure Clear;
     function SetRootContent(AContent: TnbDockingPaneContent): TPaneLeaf;
     function SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent): TPaneLeaf;
@@ -313,6 +314,12 @@ destructor TPaneTree.Destroy;
 begin
   FRoot.Free;
   inherited;
+end;
+
+procedure TPaneTree.Clear;
+begin
+  FreeAndNil(FRoot);
+  DoChanged;
 end;
 
 procedure TPaneTree.DoChanged;
