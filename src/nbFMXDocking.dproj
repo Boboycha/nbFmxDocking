@@ -172,6 +172,7 @@
         <DCCReference Include="nbDocking.DropOverlay.pas"/>
         <DCCReference Include="nbDocking.TabHost.pas"/>
         <DCCReference Include="nbDocking.Demo.pas"/>
+        <DCCReference Include="nbDocking.DesignEditors.pas"/>
         <DCCReference Include="Reg_nbFMXDocking.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>

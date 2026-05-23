@@ -1,4 +1,4 @@
-unit nbDocking.PaneHost;
+﻿unit nbDocking.PaneHost;
 
 (*
   TnbDockingPaneHost keeps the docking tree and visual split layout.
@@ -85,6 +85,8 @@ type
       Shift: TShiftState; X, Y: Single);
 
     procedure WireContent(AContent: TnbDockingPaneContent);
+    function ContainsNestedHost(AContent: TnbDockingPaneContent): Boolean;
+    procedure NormalizeContainerContent(AContent: TnbDockingPaneContent);
     procedure RebuildTreeFromDesignChildren;
     function TryReadDesignChildSizes(AContents: TList<TnbDockingPaneContent>;
       AOrientation: TPaneOrientation; out ASizes: TArray<Single>): Boolean;
@@ -299,6 +301,35 @@ begin
   AContent.OnHeaderDrag := HandleContentHeaderDrag;
 end;
 
+function TnbDockingPaneHost.ContainsNestedHost(
+  AContent: TnbDockingPaneContent): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  if AContent = nil then
+    Exit;
+
+  for I := 0 to AContent.ChildrenCount - 1 do
+    if AContent.Children[I] is TnbDockingPaneHost then
+      Exit(True);
+end;
+
+procedure TnbDockingPaneHost.NormalizeContainerContent(
+  AContent: TnbDockingPaneContent);
+begin
+  if (AContent = nil) or not ContainsNestedHost(AContent) then
+    Exit;
+
+  AContent.HeaderVisible := False;
+  AContent.Fill.Kind := TBrushKind.None;
+  AContent.Stroke.Kind := TBrushKind.None;
+  AContent.Stroke.Thickness := 0;
+  AContent.Padding.Rect := RectF(0, 0, 0, 0);
+  AContent.XRadius := 0;
+  AContent.YRadius := 0;
+end;
+
 procedure TnbDockingPaneHost.RebuildTreeFromDesignChildren;
 var
   Contents: TList<TnbDockingPaneContent>;
@@ -342,6 +373,7 @@ begin
       for I := 0 to Contents.Count - 1 do
       begin
         Content := Contents[I];
+        NormalizeContainerContent(Content);
         WireContent(Content);
 
         if FTree.Root = nil then
@@ -452,6 +484,7 @@ begin
           Splitter.Stored := False;
           Splitter.Locked := True;
           Splitter.HitTest := False;
+          Splitter.ShowGrip := False;
           Splitter.Align := TAlignLayout.Top;
           Splitter.Height := FSplitterSize;
           Splitter.Position.Y := Offset;
@@ -488,6 +521,7 @@ begin
           Splitter.Stored := False;
           Splitter.Locked := True;
           Splitter.HitTest := False;
+          Splitter.ShowGrip := False;
           Splitter.Align := TAlignLayout.Left;
           Splitter.Width := FSplitterSize;
           Splitter.Position.X := Offset;
@@ -511,15 +545,14 @@ var
   Splitter: TSplitter;
   Split: TPaneSplit;
   Info: TSplitterInfo;
-  Offset: Single;
 begin
   FDesignSplitters.Clear;
   FSplitterInfos.Clear;
+  FSplitterCovers.Clear;
   if AContents.Count < 2 then Exit;
   if not (FTree.Root is TPaneSplit) then Exit;
 
   Split := TPaneSplit(FTree.Root);
-  Offset := 0;
 
   BeginUpdate;
   try
@@ -528,31 +561,43 @@ begin
       Content := AContents[I];
       Splitter := TSplitter.Create(nil);
       FDesignSplitters.Add(Splitter);
-      Splitter.Parent := Self;
       Splitter.Stored := False;
+      Splitter.ShowGrip := False;
+      Splitter.Padding.Rect := RectF(0, 0, 0, 0);
+      Splitter.Margins.Rect := RectF(0, 0, 0, 0);
       Splitter.MinSize := 50;
       Splitter.OnMouseUp := HandleSplitterMouseUp;
 
       Info := TSplitterInfo.Create(Split, I);
       FSplitterInfos.Add(Info);
       Splitter.TagObject := Info;
+      if (FSplitterColor shr 24) > 0 then
+      begin
+        var Cover := TRectangle.Create(Self);
+        Cover.Parent := Splitter;
+        Cover.Align := TAlignLayout.Contents;
+        Cover.Fill.Color := FSplitterColor;
+        Cover.Stroke.Kind := TBrushKind.None;
+        Cover.HitTest := False;
+        FSplitterCovers.Add(Cover);
+      end
+      else
+        Splitter.Opacity := 0;
 
       if FDesignChildrenOrientation = poVertical then
       begin
-        Offset := Offset + Content.Height;
         Splitter.Align := TAlignLayout.Top;
         Splitter.Height := FSplitterSize;
-        Splitter.Position.Y := Offset;
-        Offset := Offset + FSplitterSize;
+        Splitter.Position.Y := Content.Position.Y + Content.Height;
       end
       else
       begin
-        Offset := Offset + Content.Width;
         Splitter.Align := TAlignLayout.Left;
         Splitter.Width := FSplitterSize;
-        Splitter.Position.X := Offset;
-        Offset := Offset + FSplitterSize;
+        Splitter.Position.X := Content.Position.X + Content.Width;
       end;
+
+      InsertObject(Content.Index + 1, Splitter);
     end;
   finally
     EndUpdate;
@@ -1204,6 +1249,9 @@ begin
       begin
         Splitter := TSplitter.Create(Self);
         Splitter.Parent := SplitLayout;
+        Splitter.ShowGrip := False;
+        Splitter.Padding.Rect := RectF(0, 0, 0, 0);
+        Splitter.Margins.Rect := RectF(0, 0, 0, 0);
         if ASplit.Orientation = poHorizontal then
         begin
           Splitter.Align := TAlignLayout.Left;
