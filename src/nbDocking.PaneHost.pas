@@ -66,6 +66,10 @@ type
     FAutoMatchBg: Boolean;
     FBackgroundRect: TRectangle;
     FSplitterInfos: TObjectList<TSplitterInfo>;
+    FLegacyLeafFrameThickness: Single;
+    FLegacyLeafFrameColor: TAlphaColor;
+    FLegacyActiveLeafFrameColor: TAlphaColor;
+    FLegacyHeaderHeight: Single;
     FOnContentNeeded: TContentFactoryEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
@@ -140,6 +144,14 @@ type
       write SetBackgroundColor;
     property SplitterSize: Single read FSplitterSize write FSplitterSize;
     property SplitterColor: TAlphaColor read FSplitterColor write FSplitterColor;
+    property LeafFrameThickness: Single read FLegacyLeafFrameThickness
+      write FLegacyLeafFrameThickness stored False;
+    property LeafFrameColor: TAlphaColor read FLegacyLeafFrameColor
+      write FLegacyLeafFrameColor stored False;
+    property ActiveLeafFrameColor: TAlphaColor read FLegacyActiveLeafFrameColor
+      write FLegacyActiveLeafFrameColor stored False;
+    property HeaderHeight: Single read FLegacyHeaderHeight
+      write FLegacyHeaderHeight stored False;
     property AutoMatchBg: Boolean read FAutoMatchBg write FAutoMatchBg;
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
