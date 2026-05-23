@@ -7,9 +7,12 @@ procedure RegisterDockingEditors;
 implementation
 
 uses
-  System.Classes, System.SysUtils, System.Types, System.Generics.Collections,
+  Winapi.Windows,
+  System.Classes, System.SysUtils, System.Types, System.TypInfo,
+  System.Generics.Collections,
   FMX.Types, FMX.Controls,
   FMX.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics,
   DesignIntf, DesignEditors,
   nbDocking.Types,
   nbDocking.PaneHost;
@@ -28,6 +31,38 @@ type
     function GetVerb(Index: Integer): string; override;
     function GetVerbCount: Integer; override;
   end;
+
+  TnbDockingHeaderGlyphProperty = class(TStringProperty)
+  public
+    procedure Edit; override;
+    function GetAttributes: TPropertyAttributes; override;
+    procedure GetValues(Proc: TGetStrProc); override;
+  end;
+
+  TMdl2GlyphPicker = class(TForm)
+  private
+    FAllValues: TStringList;
+    FSearchEdit: TEdit;
+    FListBox: TListBox;
+    FSelectedValue: string;
+    procedure ApplyFilter;
+    function CurrentValue: string;
+    procedure HandleSearchChange(Sender: TObject);
+    procedure HandleListDblClick(Sender: TObject);
+    procedure HandleListDrawItem(Control: TWinControl; Index: Integer;
+      Rect: TRect; State: TOwnerDrawState);
+    procedure SelectValue(const AValue: string);
+  public
+    constructor CreatePicker(AOwner: TComponent);
+    destructor Destroy; override;
+    function Execute(const ACurrentValue: string): Boolean;
+    property SelectedValue: string read FSelectedValue;
+  end;
+
+const
+  MDL2_ICON_FONT = 'Segoe MDL2 Assets';
+  MDL2_GLYPH_LEFT = 10;
+  MDL2_TEXT_LEFT = 54;
 
 function PaneCount(AHost: TnbDockingPaneHost): Integer;
 var
@@ -411,10 +446,276 @@ begin
   Result := 4;
 end;
 
+{ TnbDockingHeaderGlyphProperty }
+
+function ExtractMdl2Code(const AValue: string; out ACode: Integer): Boolean;
+var
+  P: Integer;
+  HexText: string;
+begin
+  P := Pos('MDL2:', UpperCase(AValue));
+  if P > 0 then
+  begin
+    HexText := Copy(AValue, P + 5, 4);
+    Result := TryStrToInt('$' + HexText, ACode);
+  end
+  else
+    Result := False;
+end;
+
+function GlyphCodeForValue(const AValue: string; out ACode: Integer): Boolean;
+begin
+  Result := True;
+  if SameText(AValue, '+') or SameText(AValue, 'add') or
+    SameText(AValue, 'plus') then
+    ACode := $E710
+  else if SameText(AValue, 'x') or SameText(AValue, 'close') then
+    ACode := $E711
+  else if SameText(AValue, 'broadcast') then
+    ACode := $E909
+  else if SameText(AValue, 'sftp') or SameText(AValue, 'folder') then
+    ACode := $E8B7
+  else if SameText(AValue, 'theme') then
+    ACode := $E790
+  else
+    Result := ExtractMdl2Code(AValue, ACode);
+end;
+
+function TnbDockingHeaderGlyphProperty.GetAttributes: TPropertyAttributes;
+begin
+  Result := inherited GetAttributes + [paDialog];
+end;
+
+{$I nbDocking.MDL2Glyphs.inc}
+
+procedure AddHeaderGlyphValues(AValues: TStrings);
+begin
+  AValues.Add('');
+  AValues.Add('+');
+  AValues.Add('add');
+  AValues.Add('plus');
+  AValues.Add('x');
+  AValues.Add('close');
+  AValues.Add('broadcast');
+  AValues.Add('sftp');
+  AValues.Add('folder');
+  AValues.Add('theme');
+  AddKnownMdl2GlyphValues(AValues);
+end;
+
+procedure TnbDockingHeaderGlyphProperty.Edit;
+var
+  Picker: TMdl2GlyphPicker;
+begin
+  Picker := TMdl2GlyphPicker.CreatePicker(nil);
+  try
+    if Picker.Execute(GetValue) then
+      SetValue(Picker.SelectedValue);
+  finally
+    Picker.Free;
+  end;
+end;
+
+procedure TnbDockingHeaderGlyphProperty.GetValues(Proc: TGetStrProc);
+var
+  I: Integer;
+  Values: TStringList;
+begin
+  Values := TStringList.Create;
+  try
+    AddHeaderGlyphValues(Values);
+    for I := 0 to Values.Count - 1 do
+      Proc(Values[I]);
+  finally
+    Values.Free;
+  end;
+end;
+
+{ TMdl2GlyphPicker }
+
+constructor TMdl2GlyphPicker.CreatePicker(AOwner: TComponent);
+var
+  ButtonsPanel: TPanel;
+  OkButton, CancelButton: TButton;
+begin
+  inherited CreateNew(AOwner);
+
+  Caption := 'Select header glyph';
+  BorderStyle := bsSizeable;
+  Position := poScreenCenter;
+  ClientWidth := 560;
+  ClientHeight := 620;
+  Constraints.MinWidth := 420;
+  Constraints.MinHeight := 360;
+
+  FAllValues := TStringList.Create;
+  AddHeaderGlyphValues(FAllValues);
+
+  FSearchEdit := TEdit.Create(Self);
+  FSearchEdit.Parent := Self;
+  FSearchEdit.Align := alTop;
+  FSearchEdit.Height := 28;
+  FSearchEdit.Margins.SetBounds(8, 8, 8, 4);
+  FSearchEdit.AlignWithMargins := True;
+  FSearchEdit.TextHint := 'Search by name or code';
+  FSearchEdit.OnChange := HandleSearchChange;
+
+  ButtonsPanel := TPanel.Create(Self);
+  ButtonsPanel.Parent := Self;
+  ButtonsPanel.Align := alBottom;
+  ButtonsPanel.Height := 48;
+  ButtonsPanel.BevelOuter := bvNone;
+
+  OkButton := TButton.Create(Self);
+  OkButton.Parent := ButtonsPanel;
+  OkButton.Caption := 'OK';
+  OkButton.ModalResult := mrOk;
+  OkButton.Default := True;
+  OkButton.SetBounds(ClientWidth - 178, 10, 76, 28);
+  OkButton.Anchors := [akTop, akRight];
+
+  CancelButton := TButton.Create(Self);
+  CancelButton.Parent := ButtonsPanel;
+  CancelButton.Caption := 'Cancel';
+  CancelButton.ModalResult := mrCancel;
+  CancelButton.Cancel := True;
+  CancelButton.SetBounds(ClientWidth - 94, 10, 76, 28);
+  CancelButton.Anchors := [akTop, akRight];
+
+  FListBox := TListBox.Create(Self);
+  FListBox.Parent := Self;
+  FListBox.Align := alClient;
+  FListBox.Margins.SetBounds(8, 0, 8, 0);
+  FListBox.AlignWithMargins := True;
+  FListBox.ItemHeight := 30;
+  FListBox.Style := lbOwnerDrawFixed;
+  FListBox.OnDblClick := HandleListDblClick;
+  FListBox.OnDrawItem := HandleListDrawItem;
+
+  ApplyFilter;
+end;
+
+destructor TMdl2GlyphPicker.Destroy;
+begin
+  FAllValues.Free;
+  inherited;
+end;
+
+procedure TMdl2GlyphPicker.ApplyFilter;
+var
+  I: Integer;
+  Needle, Value: string;
+begin
+  Needle := Trim(FSearchEdit.Text);
+  FListBox.Items.BeginUpdate;
+  try
+    FListBox.Items.Clear;
+    for I := 0 to FAllValues.Count - 1 do
+    begin
+      Value := FAllValues[I];
+      if (Needle = '') or
+        (Pos(UpperCase(Needle), UpperCase(Value)) > 0) then
+        FListBox.Items.Add(Value);
+    end;
+
+    if FListBox.Items.Count > 0 then
+      FListBox.ItemIndex := 0;
+  finally
+    FListBox.Items.EndUpdate;
+  end;
+end;
+
+function TMdl2GlyphPicker.CurrentValue: string;
+begin
+  Result := '';
+  if (FListBox.ItemIndex >= 0) and
+    (FListBox.ItemIndex < FListBox.Items.Count) then
+    Result := FListBox.Items[FListBox.ItemIndex];
+end;
+
+function TMdl2GlyphPicker.Execute(const ACurrentValue: string): Boolean;
+begin
+  SelectValue(ACurrentValue);
+  Result := ShowModal = mrOk;
+  if Result then
+    FSelectedValue := CurrentValue;
+end;
+
+procedure TMdl2GlyphPicker.HandleListDblClick(Sender: TObject);
+begin
+  if CurrentValue <> '' then
+    ModalResult := mrOk;
+end;
+
+procedure TMdl2GlyphPicker.HandleListDrawItem(Control: TWinControl;
+  Index: Integer; Rect: TRect; State: TOwnerDrawState);
+var
+  Code: Integer;
+  GlyphText, Value: string;
+  TextRect: TRect;
+begin
+  Value := FListBox.Items[Index];
+  FListBox.Canvas.FillRect(Rect);
+
+  if GlyphCodeForValue(Value, Code) then
+  begin
+    GlyphText := Char(Code);
+    FListBox.Canvas.Font.Name := MDL2_ICON_FONT;
+    FListBox.Canvas.Font.Size := 16;
+    FListBox.Canvas.TextOut(Rect.Left + MDL2_GLYPH_LEFT, Rect.Top + 5,
+      GlyphText);
+  end;
+
+  FListBox.Canvas.Font.Assign(Font);
+  FListBox.Canvas.Font.Color := clWindowText;
+  if odSelected in State then
+    FListBox.Canvas.Font.Color := clHighlightText;
+  TextRect := Rect;
+  TextRect.Left := Rect.Left + MDL2_TEXT_LEFT;
+  DrawText(FListBox.Canvas.Handle, PChar(Value), -1, TextRect,
+    DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS);
+end;
+
+procedure TMdl2GlyphPicker.HandleSearchChange(Sender: TObject);
+begin
+  ApplyFilter;
+end;
+
+procedure TMdl2GlyphPicker.SelectValue(const AValue: string);
+var
+  I, CurrentCode, ItemCode: Integer;
+begin
+  if AValue = '' then
+  begin
+    FListBox.ItemIndex := 0;
+    Exit;
+  end;
+
+  I := FListBox.Items.IndexOf(AValue);
+  if I >= 0 then
+  begin
+    FListBox.ItemIndex := I;
+    Exit;
+  end;
+
+  if not GlyphCodeForValue(AValue, CurrentCode) then
+    Exit;
+
+  for I := 0 to FListBox.Items.Count - 1 do
+    if GlyphCodeForValue(FListBox.Items[I], ItemCode) and
+      (ItemCode = CurrentCode) then
+    begin
+      FListBox.ItemIndex := I;
+      Exit;
+    end;
+end;
+
 procedure RegisterDockingEditors;
 begin
   RegisterComponentEditor(TnbDockingPaneHost, TnbDockingPaneHostEditor);
   RegisterComponentEditor(TnbDockingPaneContent, TnbDockingPaneContentEditor);
+  RegisterPropertyEditor(TypeInfo(string), TDockingPaneHeaderAction, 'Glyph',
+    TnbDockingHeaderGlyphProperty);
 end;
 
 end.

@@ -1,4 +1,4 @@
-unit nbDocking.PaneTree;
+﻿unit nbDocking.PaneTree;
 
 (*
   N-арное дерево panes. Ключевые инварианты:
@@ -68,6 +68,7 @@ type
     function IndexOfChild(ANode: TPaneNode): Integer;
 
     procedure SetSize(AIndex: Integer; AValue: Single);
+    procedure SetSizes(const AValues: TArray<Single>);
     function GetSize(AIndex: Integer): Single;
 
     property Orientation: TPaneOrientation read FOrientation;
@@ -273,6 +274,24 @@ begin
   if AValue < 0.05 then AValue := 0.05;
   if AValue > 0.95 then AValue := 0.95;
   FSizes[AIndex] := AValue;
+  NormalizeSizes;
+end;
+
+procedure TPaneSplit.SetSizes(const AValues: TArray<Single>);
+var
+  I: Integer;
+  Value: Single;
+begin
+  if Length(AValues) <> FSizes.Count then
+    raise EDockingError.Create('TPaneSplit.SetSizes: size count mismatch');
+
+  for I := 0 to High(AValues) do
+  begin
+    Value := AValues[I];
+    if Value < 0.001 then
+      Value := 0.001;
+    FSizes[I] := Value;
+  end;
   NormalizeSizes;
 end;
 

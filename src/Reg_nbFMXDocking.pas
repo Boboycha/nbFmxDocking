@@ -29,7 +29,8 @@ begin
     'HeaderDragEnabled',
     'AlwaysShowActive',
     'HeaderBgColor',
-    'HeaderTextColor'
+    'HeaderTextColor',
+    'HeaderActions'
   ]);
 
   RegisterPropertiesInCategory(DockingEventsCategory, TnbDockingPaneContent, [

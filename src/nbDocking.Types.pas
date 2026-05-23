@@ -1,4 +1,4 @@
-unit nbDocking.Types;
+﻿unit nbDocking.Types;
 
 (*
   TnbDockingPaneContent — самодостаточная карточка (TRectangle):
@@ -54,26 +54,47 @@ type
      перерисовывается в setter'е, событие — только для тех, кто СНАРУЖИ. *)
   TPaneHeaderChangedEvent = procedure(Sender: TnbDockingPaneContent) of object;
 
-  TDockingPaneHeaderAction = class
+  TDockingPaneHeaderAction = class(TCollectionItem)
   private
     FId: string;
     FGlyph: string;
     FHint: string;
     FOnExecute: TPaneHeaderActionEvent;
+    procedure SetId(const AValue: string);
+    procedure SetGlyph(const AValue: string);
+    procedure SetHint(const AValue: string);
+    procedure SetOnExecute(AValue: TPaneHeaderActionEvent);
+  protected
+    function GetDisplayName: string; override;
   public
-    constructor Create(const AId, AGlyph, AHint: string;
-      AOnExecute: TPaneHeaderActionEvent);
+    constructor Create(Collection: TCollection); override;
 
-    property Id: string read FId;
-    property Glyph: string read FGlyph write FGlyph;
-    property Hint: string read FHint write FHint;
-    property OnExecute: TPaneHeaderActionEvent read FOnExecute write FOnExecute;
+  published
+    property Id: string read FId write SetId;
+    property Glyph: string read FGlyph write SetGlyph;
+    property Hint: string read FHint write SetHint;
+    property OnExecute: TPaneHeaderActionEvent read FOnExecute
+      write SetOnExecute;
+  end;
+
+  TDockingPaneHeaderActions = class(TOwnedCollection)
+  private
+    function GetItem(Index: Integer): TDockingPaneHeaderAction;
+    procedure SetItem(Index: Integer; AValue: TDockingPaneHeaderAction);
+  protected
+    procedure Update(Item: TCollectionItem); override;
+  public
+    constructor Create(AOwner: TPersistent);
+    function Add: TDockingPaneHeaderAction;
+    property Items[Index: Integer]: TDockingPaneHeaderAction
+      read GetItem write SetItem; default;
   end;
 
   (* Кнопка action в rtHeader — styled FMX button с привязанным id. *)
   TPaneHeaderActionButton = class(TSpeedButton)
   public
     ActionId: string;
+    UsesIconFont: Boolean;
   end;
 
   TnbDockingPaneContent = class(TRectangle)
@@ -96,7 +117,7 @@ type
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
 
-    FHeaderActions: TObjectList<TDockingPaneHeaderAction>;
+    FHeaderActions: TDockingPaneHeaderActions;
     FActionButtons: TList<TPaneHeaderActionButton>;
 
     FOnSplitRequest: TPaneSplitRequestEvent;
@@ -111,6 +132,7 @@ type
     procedure SetHeaderTextColor(AValue: TAlphaColor);
     procedure SetHeaderVisible(AValue: Boolean);
     function GetHeaderVisible: Boolean;
+    procedure SetHeaderActions(AValue: TDockingPaneHeaderActions);
     procedure SetAlwaysShowActive(AValue: Boolean);
     procedure ApplyHeaderColors;
     procedure DoHeaderChanged;
@@ -192,9 +214,6 @@ type
     (* True — Stroke всегда рисуется яркой (как у активного pane), даже
      если SetActive(False). Для менеджер-карточек, у которых индикатор
      активности не нужен, а нужна стабильно видимая рамка. *)
-    property HeaderActions: TObjectList<TDockingPaneHeaderAction>
-      read FHeaderActions;
-
     property OnSplitRequest: TPaneSplitRequestEvent
       read FOnSplitRequest write FOnSplitRequest;
     property OnHeaderDrag: TContentHeaderDragEvent
@@ -211,6 +230,8 @@ type
       write SetHeaderBgColor default TAlphaColor($FF2A2A2A);
     property HeaderTextColor: TAlphaColor read FHeaderTextColor
       write SetHeaderTextColor default TAlphaColor($FFE0E0E0);
+    property HeaderActions: TDockingPaneHeaderActions read FHeaderActions
+      write SetHeaderActions;
     property OnCloseRequest: TPaneCloseRequestEvent
       read FOnCloseRequest write FOnCloseRequest;
     property OnActivateRequest: TPaneActivateRequestEvent
@@ -235,6 +256,7 @@ const
   STROKE_THICKNESS    = 1.0;
   DRAG_THRESHOLD      = 5;
   DOCK_ICON_FONT      = 'Segoe MDL2 Assets';
+  DOCK_ICON_ADD       = #$E710;
   DOCK_ICON_CANCEL    = #$E711;
   DOCK_ICON_BROADCAST = #$E909;
   DOCK_ICON_FOLDER    = #$E8B7;
@@ -244,18 +266,46 @@ type
   (* Cast-наследник для доступа к protected Capture/ReleaseCapture. *)
   TControlAccess = class(TControl);
 
-function HeaderActionIconFor(const AId, AGlyph: string): string;
+function HeaderActionGlyphFor(const AId, AGlyph: string;
+  out AUsesIconFont: Boolean): string;
+var
+  GlyphText, HexText: string;
+  Code, P: Integer;
 begin
-  if SameText(AId, 'close') or SameText(AGlyph, 'x') then
+  GlyphText := Trim(AGlyph);
+  AUsesIconFont := True;
+
+  if SameText(AId, 'add') or SameText(GlyphText, 'add') or
+    SameText(GlyphText, 'plus') or (GlyphText = '+') then
+    Exit(DOCK_ICON_ADD);
+  if SameText(AId, 'close') or SameText(GlyphText, 'close') or
+    SameText(GlyphText, 'x') then
     Exit(DOCK_ICON_CANCEL);
-  if SameText(AId, 'broadcast') or SameText(AGlyph, 'B') then
+  if SameText(AId, 'broadcast') or SameText(GlyphText, 'broadcast') or
+    SameText(GlyphText, 'B') then
     Exit(DOCK_ICON_BROADCAST);
-  if SameText(AId, 'sftp') or SameText(AGlyph, 'S') then
+  if SameText(AId, 'sftp') or SameText(GlyphText, 'sftp') or
+    SameText(GlyphText, 'folder') or SameText(GlyphText, 'S') then
     Exit(DOCK_ICON_FOLDER);
-  if SameText(AId, 'theme') or SameText(AGlyph, 'T') then
+  if SameText(AId, 'theme') or SameText(GlyphText, 'theme') or
+    SameText(GlyphText, 'T') then
     Exit(DOCK_ICON_THEME);
 
-  Result := AGlyph;
+  P := Pos('MDL2:', UpperCase(GlyphText));
+  if P > 0 then
+  begin
+    HexText := Copy(GlyphText, P + 5, 4);
+    if TryStrToInt('$' + HexText, Code) and
+      (Code >= $E700) and (Code <= $F8FF) then
+      Exit(Char(Code));
+  end;
+
+  if (Length(GlyphText) = 1) and
+    (Ord(GlyphText[1]) >= $E700) and (Ord(GlyphText[1]) <= $F8FF) then
+    Exit(GlyphText);
+
+  AUsesIconFont := False;
+  Result := GlyphText;
 end;
 
 function BlendColor(AColor1, AColor2: TAlphaColor;
@@ -275,14 +325,81 @@ end;
 
 { TDockingPaneHeaderAction }
 
-constructor TDockingPaneHeaderAction.Create(const AId, AGlyph, AHint: string;
-  AOnExecute: TPaneHeaderActionEvent);
+constructor TDockingPaneHeaderAction.Create(Collection: TCollection);
 begin
-  inherited Create;
-  FId := AId;
-  FGlyph := AGlyph;
-  FHint := AHint;
-  FOnExecute := AOnExecute;
+  inherited;
+end;
+
+function TDockingPaneHeaderAction.GetDisplayName: string;
+begin
+  if FId <> '' then
+    Result := FId
+  else if FGlyph <> '' then
+    Result := FGlyph
+  else
+    Result := inherited GetDisplayName;
+end;
+
+procedure TDockingPaneHeaderAction.SetId(const AValue: string);
+begin
+  if FId = AValue then Exit;
+  FId := AValue;
+  Changed(False);
+end;
+
+procedure TDockingPaneHeaderAction.SetGlyph(const AValue: string);
+begin
+  if FGlyph = AValue then Exit;
+  FGlyph := AValue;
+  Changed(False);
+end;
+
+procedure TDockingPaneHeaderAction.SetHint(const AValue: string);
+begin
+  if FHint = AValue then Exit;
+  FHint := AValue;
+  Changed(False);
+end;
+
+procedure TDockingPaneHeaderAction.SetOnExecute(
+  AValue: TPaneHeaderActionEvent);
+begin
+  FOnExecute := AValue;
+  Changed(False);
+end;
+
+{ TDockingPaneHeaderActions }
+
+constructor TDockingPaneHeaderActions.Create(AOwner: TPersistent);
+begin
+  inherited Create(AOwner, TDockingPaneHeaderAction);
+end;
+
+function TDockingPaneHeaderActions.Add: TDockingPaneHeaderAction;
+begin
+  Result := inherited Add as TDockingPaneHeaderAction;
+end;
+
+function TDockingPaneHeaderActions.GetItem(
+  Index: Integer): TDockingPaneHeaderAction;
+begin
+  Result := inherited GetItem(Index) as TDockingPaneHeaderAction;
+end;
+
+procedure TDockingPaneHeaderActions.SetItem(Index: Integer;
+  AValue: TDockingPaneHeaderAction);
+begin
+  inherited SetItem(Index, AValue);
+end;
+
+procedure TDockingPaneHeaderActions.Update(Item: TCollectionItem);
+var
+  Owner: TPersistent;
+begin
+  inherited;
+  Owner := GetOwner;
+  if Owner is TnbDockingPaneContent then
+    TnbDockingPaneContent(Owner).RebuildActionButtons;
 end;
 
 { TnbDockingPaneContent }
@@ -308,7 +425,7 @@ begin
   FHeaderTextColor := TAlphaColor($FFE0E0E0);
   FHeaderDragEnabled := True;
 
-  FHeaderActions := TObjectList<TDockingPaneHeaderAction>.Create(True);
+  FHeaderActions := TDockingPaneHeaderActions.Create(Self);
   FActionButtons := TList<TPaneHeaderActionButton>.Create;
 
   (* rtHeader — прозрачный полоска MostTop. Текст и кнопки рисуются прямо
@@ -407,7 +524,10 @@ begin
     Btn := FActionButtons[I];
     Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
       TStyledSetting.Family, TStyledSetting.Size];
-    Btn.TextSettings.Font.Family := DOCK_ICON_FONT;
+    if Btn.UsesIconFont then
+      Btn.TextSettings.Font.Family := DOCK_ICON_FONT
+    else
+      Btn.TextSettings.Font.Family := '';
     Btn.TextSettings.FontColor := FHeaderTextColor;
   end;
 
@@ -467,6 +587,13 @@ end;
 function TnbDockingPaneContent.GetHeaderVisible: Boolean;
 begin
   Result := (FHeader <> nil) and FHeader.Visible;
+end;
+
+procedure TnbDockingPaneContent.SetHeaderActions(
+  AValue: TDockingPaneHeaderActions);
+begin
+  FHeaderActions.Assign(AValue);
+  RebuildActionButtons;
 end;
 
 procedure TnbDockingPaneContent.SetAlwaysShowActive(AValue: Boolean);
@@ -690,8 +817,16 @@ begin
     raise EDockingError.CreateFmt(
       'TnbDockingPaneContent.AddHeaderAction: duplicate action id "%s"', [AId]);
 
-  Result := TDockingPaneHeaderAction.Create(AId, AGlyph, AHint, AOnExecute);
-  FHeaderActions.Add(Result);
+  FHeaderActions.BeginUpdate;
+  try
+    Result := FHeaderActions.Add;
+    Result.FId := AId;
+    Result.FGlyph := AGlyph;
+    Result.FHint := AHint;
+    Result.FOnExecute := AOnExecute;
+  finally
+    FHeaderActions.EndUpdate;
+  end;
   RebuildActionButtons;
 end;
 
@@ -737,7 +872,9 @@ var
 begin
   Action := FindHeaderAction(AId);
   if (Action <> nil) and Assigned(Action.OnExecute) then
-    Action.OnExecute(Self, Action.Id);
+    Action.OnExecute(Self, Action.Id)
+  else if (Action <> nil) and SameText(Action.Id, 'close') then
+    RequestClose;
 end;
 
 procedure TnbDockingPaneContent.RebuildActionButtons;
@@ -745,7 +882,10 @@ var
   I: Integer;
   Action: TDockingPaneHeaderAction;
   Btn: TPaneHeaderActionButton;
+  UsesIconFont: Boolean;
 begin
+  if FActionsBar = nil then Exit;
+
   for I := FActionButtons.Count - 1 downto 0 do
     FActionButtons[I].Free;
   FActionButtons.Clear;
@@ -761,13 +901,22 @@ begin
     Btn.Width := ACTION_BTN_WIDTH;
     Btn.Height := HEADER_HEIGHT - 7;
     Btn.Margins.Rect := RectF(0, 3, 4, 3);
-    Btn.Text := HeaderActionIconFor(Action.Id, Action.Glyph);
+    Btn.Text := HeaderActionGlyphFor(Action.Id, Action.Glyph, UsesIconFont);
+    Btn.UsesIconFont := UsesIconFont;
     Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
       TStyledSetting.Family, TStyledSetting.Size];
     Btn.TextSettings.HorzAlign := TTextAlign.Center;
     Btn.TextSettings.VertAlign := TTextAlign.Center;
-    Btn.TextSettings.Font.Family := DOCK_ICON_FONT;
-    Btn.TextSettings.Font.Size := 13;
+    if UsesIconFont then
+    begin
+      Btn.TextSettings.Font.Family := DOCK_ICON_FONT;
+      Btn.TextSettings.Font.Size := 13;
+    end
+    else
+    begin
+      Btn.TextSettings.Font.Family := '';
+      Btn.TextSettings.Font.Size := 12;
+    end;
     Btn.TextSettings.FontColor := FHeaderTextColor;
     Btn.TextSettings.Trimming := TTextTrimming.None;
     Btn.HitTest := True;

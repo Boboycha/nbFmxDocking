@@ -90,6 +90,13 @@ type
     procedure RebuildTreeFromDesignChildren;
     function TryReadDesignChildSizes(AContents: TList<TnbDockingPaneContent>;
       AOrientation: TPaneOrientation; out ASizes: TArray<Single>): Boolean;
+    function TryReadRootSplitSizes(AContents: TList<TnbDockingPaneContent>;
+      AOrientation: TPaneOrientation; out ASizes: TArray<Single>): Boolean;
+    procedure ApplyDesignChildSizesToRootSplit(
+      AContents: TList<TnbDockingPaneContent>);
+    procedure CollectDirectContents(AContents: TList<TnbDockingPaneContent>);
+    procedure LayoutDirectChildren(AContents: TList<TnbDockingPaneContent>;
+      AInteractiveSplitters: Boolean);
     procedure LayoutDesignChildren(AContents: TList<TnbDockingPaneContent>);
     procedure LayoutLoadedSplitters(AContents: TList<TnbDockingPaneContent>);
     procedure DetachAllContents;
@@ -247,15 +254,38 @@ begin
 end;
 
 procedure TnbDockingPaneHost.Resize;
+var
+  Contents: TList<TnbDockingPaneContent>;
 begin
   inherited;
-  if (not (csDesigning in ComponentState))
-     and not (csLoading in ComponentState)
-     and FAutoBuildDesignChildren
-     and (FTree.Root = nil)
-     and not FBuilding
-     and not FRebuildingDesignChildren then
+
+  if (csLoading in ComponentState)
+     or (not FAutoBuildDesignChildren)
+     or FBuilding
+     or FRebuildingDesignChildren then
+    Exit;
+
+  if (not (csDesigning in ComponentState)) and (FTree.Root = nil) then
+  begin
     RebuildTreeFromDesignChildren;
+    Exit;
+  end;
+
+  if (FTree.Root = nil) or ((FRootLayout <> nil) and FRootLayout.Visible) then
+    Exit;
+
+  Contents := TList<TnbDockingPaneContent>.Create;
+  try
+    CollectDirectContents(Contents);
+    if Contents.Count = 0 then Exit;
+
+    if csDesigning in ComponentState then
+      LayoutDesignChildren(Contents)
+    else
+      LayoutLoadedSplitters(Contents);
+  finally
+    Contents.Free;
+  end;
 end;
 
 procedure TnbDockingPaneHost.DoAddObject(const AObject: TFmxObject);
@@ -344,9 +374,7 @@ begin
 
   Contents := TList<TnbDockingPaneContent>.Create;
   try
-    for I := 0 to ChildrenCount - 1 do
-      if Children[I] is TnbDockingPaneContent then
-        Contents.Add(TnbDockingPaneContent(Children[I]));
+    CollectDirectContents(Contents);
 
     if Contents.Count = 0 then
     begin
@@ -388,6 +416,8 @@ begin
       FTree.OnChanged := SavedOnChanged;
       FRebuildingDesignChildren := False;
     end;
+
+    ApplyDesignChildSizesToRootSplit(Contents);
 
     if csDesigning in ComponentState then
       LayoutDesignChildren(Contents)
@@ -433,16 +463,88 @@ begin
   Result := Sum > 0;
 end;
 
-procedure TnbDockingPaneHost.LayoutDesignChildren(
+function TnbDockingPaneHost.TryReadRootSplitSizes(
+  AContents: TList<TnbDockingPaneContent>; AOrientation: TPaneOrientation;
+  out ASizes: TArray<Single>): Boolean;
+var
+  I: Integer;
+  Split: TPaneSplit;
+  Sum: Single;
+begin
+  Result := False;
+  ASizes := nil;
+
+  if (AContents.Count = 0) or not (FTree.Root is TPaneSplit) then
+    Exit;
+
+  Split := TPaneSplit(FTree.Root);
+  if (Split.Orientation <> AOrientation)
+     or (Split.ChildCount <> AContents.Count) then
+    Exit;
+
+  SetLength(ASizes, AContents.Count);
+  Sum := 0;
+  for I := 0 to AContents.Count - 1 do
+  begin
+    ASizes[I] := Split.GetSize(I);
+    Sum := Sum + ASizes[I];
+  end;
+
+  Result := Sum > 0;
+end;
+
+procedure TnbDockingPaneHost.ApplyDesignChildSizesToRootSplit(
   AContents: TList<TnbDockingPaneContent>);
+var
+  I: Integer;
+  Sizes: TArray<Single>;
+  Split: TPaneSplit;
+begin
+  if (AContents.Count < 2) or not (FTree.Root is TPaneSplit) then
+    Exit;
+
+  Split := TPaneSplit(FTree.Root);
+  if (Split.Orientation <> FDesignChildrenOrientation)
+     or (Split.ChildCount <> AContents.Count) then
+    Exit;
+
+  if not TryReadDesignChildSizes(AContents, FDesignChildrenOrientation, Sizes) then
+    Exit;
+
+  for I := 0 to High(Sizes) do
+    if Sizes[I] <= 0 then
+      Exit;
+
+  Split.SetSizes(Sizes);
+end;
+
+procedure TnbDockingPaneHost.CollectDirectContents(
+  AContents: TList<TnbDockingPaneContent>);
+var
+  I: Integer;
+begin
+  if AContents = nil then Exit;
+  AContents.Clear;
+
+  for I := 0 to ChildrenCount - 1 do
+    if Children[I] is TnbDockingPaneContent then
+      AContents.Add(TnbDockingPaneContent(Children[I]));
+end;
+
+procedure TnbDockingPaneHost.LayoutDirectChildren(
+  AContents: TList<TnbDockingPaneContent>; AInteractiveSplitters: Boolean);
 var
   I: Integer;
   Content: TnbDockingPaneContent;
   Splitter: TSplitter;
+  Split: TPaneSplit;
+  Info: TSplitterInfo;
   AvailableSize, ContentSize, Offset, SizeSum: Single;
   Sizes: TArray<Single>;
 begin
   FDesignSplitters.Clear;
+  FSplitterInfos.Clear;
+  FSplitterCovers.Clear;
   if AContents.Count = 0 then Exit;
 
   if FRootLayout <> nil then
@@ -451,7 +553,9 @@ begin
   BeginUpdate;
   try
     SizeSum := 0;
-    if TryReadDesignChildSizes(AContents, FDesignChildrenOrientation, Sizes) then
+    if not TryReadRootSplitSizes(AContents, FDesignChildrenOrientation, Sizes) then
+      TryReadDesignChildSizes(AContents, FDesignChildrenOrientation, Sizes);
+    if Length(Sizes) = AContents.Count then
       for I := 0 to High(Sizes) do
         SizeSum := SizeSum + Sizes[I];
 
@@ -480,14 +584,44 @@ begin
         begin
           Splitter := TSplitter.Create(nil);
           FDesignSplitters.Add(Splitter);
-          Splitter.Parent := Self;
           Splitter.Stored := False;
-          Splitter.Locked := True;
-          Splitter.HitTest := False;
           Splitter.ShowGrip := False;
+          Splitter.Padding.Rect := RectF(0, 0, 0, 0);
+          Splitter.Margins.Rect := RectF(0, 0, 0, 0);
           Splitter.Align := TAlignLayout.Top;
           Splitter.Height := FSplitterSize;
           Splitter.Position.Y := Offset;
+          if AInteractiveSplitters then
+          begin
+            Splitter.MinSize := 50;
+            Splitter.OnMouseUp := HandleSplitterMouseUp;
+            if FTree.Root is TPaneSplit then
+            begin
+              Split := TPaneSplit(FTree.Root);
+              Info := TSplitterInfo.Create(Split, I);
+              FSplitterInfos.Add(Info);
+              Splitter.TagObject := Info;
+            end;
+            if (FSplitterColor shr 24) > 0 then
+            begin
+              var Cover := TRectangle.Create(Self);
+              Cover.Parent := Splitter;
+              Cover.Align := TAlignLayout.Contents;
+              Cover.Fill.Color := FSplitterColor;
+              Cover.Stroke.Kind := TBrushKind.None;
+              Cover.HitTest := False;
+              FSplitterCovers.Add(Cover);
+            end
+            else
+              Splitter.Opacity := 0;
+            InsertObject(Content.Index + 1, Splitter);
+          end
+          else
+          begin
+            Splitter.Parent := Self;
+            Splitter.Locked := True;
+            Splitter.HitTest := False;
+          end;
           Offset := Offset + FSplitterSize;
         end;
       end;
@@ -517,14 +651,44 @@ begin
         begin
           Splitter := TSplitter.Create(nil);
           FDesignSplitters.Add(Splitter);
-          Splitter.Parent := Self;
           Splitter.Stored := False;
-          Splitter.Locked := True;
-          Splitter.HitTest := False;
           Splitter.ShowGrip := False;
+          Splitter.Padding.Rect := RectF(0, 0, 0, 0);
+          Splitter.Margins.Rect := RectF(0, 0, 0, 0);
           Splitter.Align := TAlignLayout.Left;
           Splitter.Width := FSplitterSize;
           Splitter.Position.X := Offset;
+          if AInteractiveSplitters then
+          begin
+            Splitter.MinSize := 50;
+            Splitter.OnMouseUp := HandleSplitterMouseUp;
+            if FTree.Root is TPaneSplit then
+            begin
+              Split := TPaneSplit(FTree.Root);
+              Info := TSplitterInfo.Create(Split, I);
+              FSplitterInfos.Add(Info);
+              Splitter.TagObject := Info;
+            end;
+            if (FSplitterColor shr 24) > 0 then
+            begin
+              var Cover := TRectangle.Create(Self);
+              Cover.Parent := Splitter;
+              Cover.Align := TAlignLayout.Contents;
+              Cover.Fill.Color := FSplitterColor;
+              Cover.Stroke.Kind := TBrushKind.None;
+              Cover.HitTest := False;
+              FSplitterCovers.Add(Cover);
+            end
+            else
+              Splitter.Opacity := 0;
+            InsertObject(Content.Index + 1, Splitter);
+          end
+          else
+          begin
+            Splitter.Parent := Self;
+            Splitter.Locked := True;
+            Splitter.HitTest := False;
+          end;
           Offset := Offset + FSplitterSize;
         end;
       end;
@@ -537,71 +701,16 @@ begin
   end;
 end;
 
+procedure TnbDockingPaneHost.LayoutDesignChildren(
+  AContents: TList<TnbDockingPaneContent>);
+begin
+  LayoutDirectChildren(AContents, False);
+end;
+
 procedure TnbDockingPaneHost.LayoutLoadedSplitters(
   AContents: TList<TnbDockingPaneContent>);
-var
-  I: Integer;
-  Content: TnbDockingPaneContent;
-  Splitter: TSplitter;
-  Split: TPaneSplit;
-  Info: TSplitterInfo;
 begin
-  FDesignSplitters.Clear;
-  FSplitterInfos.Clear;
-  FSplitterCovers.Clear;
-  if AContents.Count < 2 then Exit;
-  if not (FTree.Root is TPaneSplit) then Exit;
-
-  Split := TPaneSplit(FTree.Root);
-
-  BeginUpdate;
-  try
-    for I := 0 to AContents.Count - 2 do
-    begin
-      Content := AContents[I];
-      Splitter := TSplitter.Create(nil);
-      FDesignSplitters.Add(Splitter);
-      Splitter.Stored := False;
-      Splitter.ShowGrip := False;
-      Splitter.Padding.Rect := RectF(0, 0, 0, 0);
-      Splitter.Margins.Rect := RectF(0, 0, 0, 0);
-      Splitter.MinSize := 50;
-      Splitter.OnMouseUp := HandleSplitterMouseUp;
-
-      Info := TSplitterInfo.Create(Split, I);
-      FSplitterInfos.Add(Info);
-      Splitter.TagObject := Info;
-      if (FSplitterColor shr 24) > 0 then
-      begin
-        var Cover := TRectangle.Create(Self);
-        Cover.Parent := Splitter;
-        Cover.Align := TAlignLayout.Contents;
-        Cover.Fill.Color := FSplitterColor;
-        Cover.Stroke.Kind := TBrushKind.None;
-        Cover.HitTest := False;
-        FSplitterCovers.Add(Cover);
-      end
-      else
-        Splitter.Opacity := 0;
-
-      if FDesignChildrenOrientation = poVertical then
-      begin
-        Splitter.Align := TAlignLayout.Top;
-        Splitter.Height := FSplitterSize;
-        Splitter.Position.Y := Content.Position.Y + Content.Height;
-      end
-      else
-      begin
-        Splitter.Align := TAlignLayout.Left;
-        Splitter.Width := FSplitterSize;
-        Splitter.Position.X := Content.Position.X + Content.Width;
-      end;
-
-      InsertObject(Content.Index + 1, Splitter);
-    end;
-  finally
-    EndUpdate;
-  end;
+  LayoutDirectChildren(AContents, True);
 end;
 
 procedure TnbDockingPaneHost.HandleContentHeaderChanged(
