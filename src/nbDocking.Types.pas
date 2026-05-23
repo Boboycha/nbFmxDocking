@@ -149,8 +149,7 @@ type
     procedure HandleHeaderMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleHeaderDblClick(Sender: TObject);
-    procedure HandleActionMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Single);
+    procedure HandleActionClick(Sender: TObject);
     procedure HandleEditExit(Sender: TObject);
     procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
       var KeyChar: Char; Shift: TShiftState);
@@ -513,10 +512,10 @@ begin
   if FCaptionLabel <> nil then
     FCaptionLabel.TextSettings.FontColor := FHeaderTextColor;
 
-  (* Stroke активного — цвет текста (контраст с фоном). Stroke неактивного —
-     смесь bg+text 42% (приглушённый — карточка видна, но не подсвечена). *)
-  FActiveStrokeColor := FHeaderTextColor;
-  FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.42);
+  (* Stroke is intentionally subtle: terminal themes often use bright text,
+     and using that color directly makes pane borders look noisy. *)
+  FActiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.48);
+  FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.26);
 
   (* Header action buttons are flat; only glyph color follows pane header. *)
   for I := 0 to FActionButtons.Count - 1 do
@@ -788,12 +787,10 @@ begin
   end;
 end;
 
-procedure TnbDockingPaneContent.HandleActionMouseDown(Sender: TObject;
-  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+procedure TnbDockingPaneContent.HandleActionClick(Sender: TObject);
 var
   Btn: TPaneHeaderActionButton;
 begin
-  if Button <> TMouseButton.mbLeft then Exit;
   if FEditingTitle then Exit;
   if not (Sender is TPaneHeaderActionButton) then Exit;
   Btn := TPaneHeaderActionButton(Sender);
@@ -921,7 +918,7 @@ begin
     Btn.TextSettings.Trimming := TTextTrimming.None;
     Btn.HitTest := True;
     Btn.ActionId := Action.Id;
-    Btn.OnMouseDown := HandleActionMouseDown;
+    Btn.OnClick := HandleActionClick;
     if Action.Hint <> '' then
     begin
       Btn.Hint := Action.Hint;

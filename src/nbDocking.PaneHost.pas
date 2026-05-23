@@ -848,7 +848,7 @@ begin
      которая является потомком ToCloseContent. Синхронный Free убьёт
      кнопку, FMX вернётся в TButton.Click → AV. *)
   if ToCloseContent <> nil then
-    TThread.Queue(nil,
+    TThread.ForceQueue(nil,
       procedure
       begin
         ToCloseContent.Free;
