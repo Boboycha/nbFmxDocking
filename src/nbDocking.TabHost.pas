@@ -1,4 +1,4 @@
-unit nbDocking.TabHost;
+﻿unit nbDocking.TabHost;
 
 (*
   Инвариант: закрытие таба, инициированное изнутри его же стека вызова
@@ -18,19 +18,20 @@ uses
   nbDocking.DropOverlay;
 
 const
-  TAB_BAR_HEIGHT              = 34;
-  TAB_BUTTON_MIN_WIDTH        = 72;
-  TAB_BUTTON_CLOSE_SIZE       = 20;
+  TAB_BAR_HEIGHT              = 44;
+  TAB_BUTTON_MIN_WIDTH        = 104;
+  TAB_BUTTON_CLOSE_SIZE       = 18;
   TAB_BUTTON_GROUP_GLYPH_WIDTH = 16;
-  TAB_BUTTON_PADDING          = 8;
-  TAB_ADD_BUTTON_WIDTH        = 32;
+  TAB_BUTTON_PADDING          = 11;
+  TAB_ADD_BUTTON_WIDTH        = 34;
   TAB_DRAG_THRESHOLD          = 5;
   TAB_DROP_INDICATOR_WIDTH    = 2;
   (* Подстраховка против TextLayout.Width = 0 на первой раскладке
      (до того как FMX отрисовал шрифт). ≈ ширина символа при FontSize=13. *)
   TAB_TEXT_AVG_CHAR_WIDTH     = 7.5;
   TAB_GROUP_CAPTION           = 'Group';
-  TAB_CLOSE_HOVER_COLOR       = TAlphaColor($30000000);
+  TAB_BUTTON_HOVER_BLEND      = 0.22;
+  TAB_BUTTON_STROKE_BLEND     = 0.84;
   TAB_ICON_FONT               = 'Segoe MDL2 Assets';
   TAB_ICON_GROUP              = #$E902;
   TAB_ICON_CLOSE              = #$E711;
@@ -437,19 +438,21 @@ begin
   ClipChildren := True;
   Align := TAlignLayout.Left;
   Width := TAB_BUTTON_MIN_WIDTH;
-  Margins.Rect := RectF(0, 4, 0, 0);
+  Margins.Rect := RectF(8, 8, 0, 7);
   Fill.Kind := TBrushKind.Solid;
-  Stroke.Kind := TBrushKind.None;
-  XRadius := 4;
-  YRadius := 4;
-  Corners := [TCorner.TopLeft, TCorner.TopRight];
+  Stroke.Kind := TBrushKind.Solid;
+  Stroke.Thickness := 1;
+  XRadius := 7;
+  YRadius := 7;
+  Corners := [TCorner.TopLeft, TCorner.TopRight,
+    TCorner.BottomLeft, TCorner.BottomRight];
 
   FCaptionLabel := TLabel.Create(Self);
   FCaptionLabel.Parent := Self;
   FCaptionLabel.Align := TAlignLayout.None;
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
   FCaptionLabel.TextSettings.VertAlign := TTextAlign.Center;
-  FCaptionLabel.TextSettings.Font.Size := 13;
+  FCaptionLabel.TextSettings.Font.Size := 12;
   FCaptionLabel.StyledSettings := [];
   FCaptionLabel.HitTest := False;
 
@@ -479,8 +482,8 @@ begin
   FCloseBtn.Width := TAB_BUTTON_CLOSE_SIZE;
   FCloseBtn.Fill.Kind := TBrushKind.None;
   FCloseBtn.Stroke.Kind := TBrushKind.None;
-  FCloseBtn.XRadius := 3;
-  FCloseBtn.YRadius := 3;
+  FCloseBtn.XRadius := 4;
+  FCloseBtn.YRadius := 4;
   FCloseBtn.HitTest := True;
   FCloseBtn.OnMouseDown := HandleCloseMouseDown;
   FCloseBtn.OnMouseEnter := HandleCloseMouseEnter;
@@ -493,7 +496,7 @@ begin
   FCloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
   FCloseGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
-  FCloseGlyph.TextSettings.Font.Size := 13;
+  FCloseGlyph.TextSettings.Font.Size := 12;
   FCloseGlyph.HitTest := False;
 
   OnMouseDown := HandleMouseDown;
@@ -708,7 +711,7 @@ procedure TTabButton.UpdateVisual(AIsActive: Boolean);
 var
   Host: TnbDockingTabHost;
   Content: TnbDockingPaneContent;
-  BgColor, TextColor: TAlphaColor;
+  BgColor, TextColor, StrokeColor: TAlphaColor;
 begin
   if FTab = nil then Exit;
   Host := FTab.Owner;
@@ -722,32 +725,50 @@ begin
   begin
     if AIsActive then
     begin
-      BgColor := Content.HeaderBgColor;
+      BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabActiveColor, 0.74);
       TextColor := Content.HeaderTextColor;
+      StrokeColor := Host.AccentColor;
     end
     else
     begin
       if FHovered then
-        BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabHoverColor, 0.38)
+        BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabHoverColor, 0.20)
       else
-        BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabInactiveColor, 0.24);
+        BgColor := BlendAlphaColor(Content.HeaderBgColor, Host.TabInactiveColor, 0.12);
       TextColor := ReadableTextColor(BgColor, Content.HeaderTextColor,
         Host.TabTextColor);
+      StrokeColor := BlendAlphaColor(BgColor, TextColor,
+        TAB_BUTTON_STROKE_BLEND);
     end;
   end
   else
   begin
     if AIsActive then
-      BgColor := Host.TabActiveColor
+    begin
+      BgColor := Host.TabActiveColor;
+      StrokeColor := Host.AccentColor;
+    end
     else if FHovered then
-      BgColor := Host.TabHoverColor
+    begin
+      BgColor := Host.TabHoverColor;
+      StrokeColor := BlendAlphaColor(Host.TabHoverColor, Host.TabTextColor, 0.78);
+    end
     else
+    begin
       BgColor := Host.TabInactiveColor;
+      StrokeColor := BlendAlphaColor(Host.TabInactiveColor, Host.TabTextColor,
+        TAB_BUTTON_STROKE_BLEND);
+    end;
     TextColor := Host.TabTextColor;
   end;
 
   Fill.Color := BgColor;
+  Stroke.Color := StrokeColor;
   FCaptionLabel.TextSettings.FontColor := TextColor;
+  if AIsActive then
+    FCaptionLabel.TextSettings.Font.Style := [TFontStyle.fsBold]
+  else
+    FCaptionLabel.TextSettings.Font.Style := [];
   FCloseGlyph.TextSettings.FontColor := TextColor;
   if FGroupGlyph <> nil then
     FGroupGlyph.TextSettings.FontColor := TextColor;
@@ -909,10 +930,20 @@ begin
 end;
 
 procedure TTabButton.HandleCloseMouseEnter(Sender: TObject);
+var
+  Host: TnbDockingTabHost;
 begin
   if FCloseBtn = nil then Exit;
+  Host := nil;
+  if FTab <> nil then
+    Host := FTab.Owner;
+
   FCloseBtn.Fill.Kind := TBrushKind.Solid;
-  FCloseBtn.Fill.Color := TAB_CLOSE_HOVER_COLOR;
+  if Host <> nil then
+    FCloseBtn.Fill.Color := BlendAlphaColor(Host.TabHoverColor,
+      Host.TabBarColor, TAB_BUTTON_HOVER_BLEND)
+  else
+    FCloseBtn.Fill.Color := TAlphaColor($30000000);
 end;
 
 procedure TTabButton.HandleCloseMouseLeave(Sender: TObject);
@@ -1022,11 +1053,11 @@ begin
   FActionButton.Parent := FTabBar;
   FActionButton.Align := TAlignLayout.Right;
   FActionButton.Width := TAB_ADD_BUTTON_WIDTH;
-  FActionButton.Margins.Rect := RectF(2, 6, 2, 4);
+  FActionButton.Margins.Rect := RectF(4, 8, 6, 8);
   FActionButton.Fill.Kind := TBrushKind.None;
   FActionButton.Stroke.Kind := TBrushKind.None;
-  FActionButton.XRadius := 3;
-  FActionButton.YRadius := 3;
+  FActionButton.XRadius := 6;
+  FActionButton.YRadius := 6;
   FActionButton.HitTest := True;
   FActionButton.Visible := FTabBarActionVisible;
   FActionButton.OnMouseDown := HandleActionButtonClick;
@@ -1048,11 +1079,11 @@ begin
   FAddButton.Parent := FTabBar;
   FAddButton.Align := TAlignLayout.Right;
   FAddButton.Width := TAB_ADD_BUTTON_WIDTH;
-  FAddButton.Margins.Rect := RectF(2, 6, 2, 4);
+  FAddButton.Margins.Rect := RectF(4, 8, 6, 8);
   FAddButton.Fill.Kind := TBrushKind.None;
   FAddButton.Stroke.Kind := TBrushKind.None;
-  FAddButton.XRadius := 3;
-  FAddButton.YRadius := 3;
+  FAddButton.XRadius := 6;
+  FAddButton.YRadius := 6;
   FAddButton.HitTest := True;
   FAddButton.Visible := FTabAddVisible;
   FAddButton.OnMouseDown := HandleAddButtonClick;
@@ -1110,7 +1141,8 @@ procedure TnbDockingTabHost.HandleActionButtonMouseEnter(Sender: TObject);
 begin
   if FActionButton = nil then Exit;
   FActionButton.Fill.Kind := TBrushKind.Solid;
-  FActionButton.Fill.Color := TAB_CLOSE_HOVER_COLOR;
+  FActionButton.Fill.Color := BlendAlphaColor(FTabHoverColor, FTabBarColor,
+    TAB_BUTTON_HOVER_BLEND);
 end;
 
 procedure TnbDockingTabHost.HandleActionButtonMouseLeave(Sender: TObject);
@@ -1123,7 +1155,8 @@ procedure TnbDockingTabHost.HandleAddButtonMouseEnter(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.Solid;
-  FAddButton.Fill.Color := TAB_CLOSE_HOVER_COLOR;
+  FAddButton.Fill.Color := BlendAlphaColor(FTabHoverColor, FTabBarColor,
+    TAB_BUTTON_HOVER_BLEND);
 end;
 
 procedure TnbDockingTabHost.HandleAddButtonMouseLeave(Sender: TObject);

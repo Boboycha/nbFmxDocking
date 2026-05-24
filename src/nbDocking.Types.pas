@@ -100,6 +100,7 @@ type
   TnbDockingPaneContent = class(TRectangle)
   private
     FHeader: TRectangle;
+    FHeaderDivider: TRectangle;
     FCaptionLabel: TLabel;
     FCaptionEdit: TEdit;
     FActionsBar: TLayout;
@@ -150,6 +151,8 @@ type
       Shift: TShiftState; X, Y: Single);
     procedure HandleHeaderDblClick(Sender: TObject);
     procedure HandleActionClick(Sender: TObject);
+    procedure HandleActionMouseEnter(Sender: TObject);
+    procedure HandleActionMouseLeave(Sender: TObject);
     procedure HandleEditExit(Sender: TObject);
     procedure HandleEditKeyDown(Sender: TObject; var Key: Word;
       var KeyChar: Char; Shift: TShiftState);
@@ -246,12 +249,12 @@ type
 implementation
 
 const
-  HEADER_HEIGHT       = 24;
+  HEADER_HEIGHT       = 32;
   ACTION_BTN_WIDTH    = 22;
-  ACTION_BTN_SLOT     = 26;   (* ширина кнопки + правый отступ *)
-  CARD_RADIUS         = 10;
-  CARD_PADDING_OTHER  = 2;
-  CARD_PADDING_BOTTOM = 8;    (* защита скруглённого нижнего угла *)
+  ACTION_BTN_SLOT     = 25;   (* ширина кнопки + правый отступ *)
+  CARD_RADIUS         = 11;
+  CARD_PADDING_OTHER  = 1;
+  CARD_PADDING_BOTTOM = 4;    (* защита скруглённого нижнего угла *)
   STROKE_THICKNESS    = 1.0;
   DRAG_THRESHOLD      = 5;
   DOCK_ICON_FONT      = 'Segoe MDL2 Assets';
@@ -475,6 +478,16 @@ begin
   FCaptionEdit.OnExit := HandleEditExit;
   FCaptionEdit.OnKeyDown := HandleEditKeyDown;
 
+  FHeaderDivider := TRectangle.Create(Self);
+  FHeaderDivider.Parent := FHeader;
+  FHeaderDivider.Stored := False;
+  FHeaderDivider.Locked := True;
+  FHeaderDivider.Align := TAlignLayout.Bottom;
+  FHeaderDivider.Height := 1;
+  FHeaderDivider.Fill.Kind := TBrushKind.Solid;
+  FHeaderDivider.Stroke.Kind := TBrushKind.None;
+  FHeaderDivider.HitTest := False;
+
   ApplyHeaderColors;
   (* Кнопку закрытия добавляет каждый потомок сам в конце своих action'ов:
      AddHeaderAction('close', 'x', AddCloseHandler, 'Close') — чтобы ✕
@@ -509,13 +522,16 @@ var
   Btn: TPaneHeaderActionButton;
 begin
   Fill.Color := FHeaderBgColor;
+  if FHeaderDivider <> nil then
+    FHeaderDivider.Fill.Color := BlendColor(FHeaderBgColor, FHeaderTextColor,
+      0.13);
   if FCaptionLabel <> nil then
     FCaptionLabel.TextSettings.FontColor := FHeaderTextColor;
 
   (* Stroke is intentionally subtle: terminal themes often use bright text,
      and using that color directly makes pane borders look noisy. *)
-  FActiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.48);
-  FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.26);
+  FActiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.30);
+  FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.13);
 
   (* Header action buttons are flat; only glyph color follows pane header. *)
   for I := 0 to FActionButtons.Count - 1 do
@@ -916,9 +932,12 @@ begin
     end;
     Btn.TextSettings.FontColor := FHeaderTextColor;
     Btn.TextSettings.Trimming := TTextTrimming.None;
+    Btn.Opacity := 0.72;
     Btn.HitTest := True;
     Btn.ActionId := Action.Id;
     Btn.OnClick := HandleActionClick;
+    Btn.OnMouseEnter := HandleActionMouseEnter;
+    Btn.OnMouseLeave := HandleActionMouseLeave;
     if Action.Hint <> '' then
     begin
       Btn.Hint := Action.Hint;
@@ -942,6 +961,18 @@ begin
     FActionButtons[I].Height := HEADER_HEIGHT - 7;
   end;
   FActionsBar.Width := FActionButtons.Count * ACTION_BTN_SLOT;
+end;
+
+procedure TnbDockingPaneContent.HandleActionMouseEnter(Sender: TObject);
+begin
+  if Sender is TPaneHeaderActionButton then
+    TPaneHeaderActionButton(Sender).Opacity := 1.0;
+end;
+
+procedure TnbDockingPaneContent.HandleActionMouseLeave(Sender: TObject);
+begin
+  if Sender is TPaneHeaderActionButton then
+    TPaneHeaderActionButton(Sender).Opacity := 0.72;
 end;
 
 procedure TnbDockingPaneContent.EnsureFooter;
