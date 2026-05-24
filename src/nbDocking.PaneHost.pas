@@ -787,8 +787,6 @@ begin
   if AContent = nil then
     raise EDockingError.Create('TnbDockingPaneHost.SetInitialContent: nil content');
 
-  if AContent.Owner <> Self then
-    InsertComponent(AContent);
   AContent.Parent := nil;
   WireContent(AContent);
 
@@ -811,8 +809,6 @@ begin
     if ANewContent = nil then Exit;
   end;
 
-  if ANewContent.Owner <> Self then
-    InsertComponent(ANewContent);
   ANewContent.Parent := nil;
   WireContent(ANewContent);
 

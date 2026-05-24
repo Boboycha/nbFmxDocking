@@ -67,6 +67,9 @@ type
 
     (* Группы (LeafCount > 1) запрещено перетаскивать в split-зону. *)
     function IsSingle: Boolean;
+    (* True — tab можно утащить из tabbar в pane/split-зону.
+       Учитывает не только LeafCount, но и запрет drag у самого content. *)
+    function CanDockToPane: Boolean;
   end;
 
   TDockingTabEvent = procedure(Sender: TObject; ATab: TDockingTab) of object;
@@ -424,7 +427,18 @@ end;
 
 function TDockingTab.IsSingle: Boolean;
 begin
-  Result := (FPaneHost <> nil) and (FPaneHost.Tree.LeafCount = 1);
+  Result := (FPaneHost <> nil) and (FPaneHost.Tree <> nil)
+    and (FPaneHost.Tree.LeafCount = 1);
+end;
+
+function TDockingTab.CanDockToPane: Boolean;
+var
+  Content: TnbDockingPaneContent;
+begin
+  Result := False;
+  if not IsSingle then Exit;
+  Content := FPaneHost.ActiveLeafContent;
+  Result := (Content <> nil) and Content.HeaderDragEnabled;
 end;
 
 { TTabButton }
@@ -836,7 +850,7 @@ begin
 
     if FDragState = dsDragging then
     begin
-      if IsOutsideTabBar and FTab.IsSingle then
+      if IsOutsideTabBar and FTab.CanDockToPane then
       begin
         FDragState := dsDraggingToPane;
         Host.TabButton_EnterPaneDrag(Self);
@@ -2046,6 +2060,7 @@ var
   Content: TnbDockingPaneContent;
 begin
   if (ASourceTab = nil) or (ATargetTab = nil) then Exit;
+  if not ASourceTab.CanDockToPane then Exit;
 
   if ASourceTab = ATargetTab then
   begin
@@ -2054,8 +2069,6 @@ begin
     ATargetTab.PaneHost.SplitActive(ADir, nil);
     Exit;
   end;
-
-  if not ASourceTab.IsSingle then Exit;
 
   Content := ASourceTab.PaneHost.TakeActiveContent;
   if Content = nil then Exit;
