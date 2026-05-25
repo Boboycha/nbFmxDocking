@@ -1,0 +1,171 @@
+object DesignTestForm: TDesignTestForm
+  Left = 0
+  Top = 0
+  Caption = 'Docking Design Test'
+  ClientHeight = 560
+  ClientWidth = 860
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  DesignerMasterStyle = 0
+  object Host: TnbDockingPaneHost
+    Align = Client
+    Size.Width = 860.000000000000000000
+    Size.Height = 560.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 0
+    BackgroundColor = xFF101418
+    SplitterSize = 8.000000000000000000
+    SplitterColor = xFF25303A
+    AutoMatchBg = False
+    DesignChildrenLayoutMode = dlmAlign
+    object LeftPane: TnbDockingPaneContent
+      Align = Left
+      Caption = 'Fixed left'
+      Fill.Color = xFF17212B
+      Padding.Left = 1.000000000000000000
+      Padding.Top = 1.000000000000000000
+      Padding.Right = 1.000000000000000000
+      Padding.Bottom = 4.000000000000000000
+      Position.X = 0.000000000000000000
+      Position.Y = 0.000000000000000000
+      Size.Width = 220.000000000000000000
+      Size.Height = 560.000000000000000000
+      Size.PlatformDefault = False
+      Stroke.Color = xFF3E596A
+      XRadius = 11.000000000000000000
+      YRadius = 11.000000000000000000
+      HeaderDragEnabled = False
+      AllowResize = []
+      MinPaneWidth = 180.000000000000000000
+      MinPaneHeight = 120.000000000000000000
+      HeaderBgColor = xFF17212B
+      HeaderTextColor = xFFE5F3FF
+      HeaderActions = <>
+      object LeftLabel: TLabel
+        Align = Client
+        StyledSettings = [Family, Style]
+        Margins.Left = 12.000000000000000000
+        Margins.Top = 12.000000000000000000
+        Margins.Right = 12.000000000000000000
+        Margins.Bottom = 12.000000000000000000
+        Size.Width = 194.000000000000000000
+        Size.Height = 510.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Left pane: Align=Left, HeaderDragEnabled=False, AllowResize=[]'
+        TextSettings.FontColor = xFFD3E7F8
+        TextSettings.WordWrap = True
+      end
+    end
+    object TopPane: TnbDockingPaneContent
+      Align = Top
+      Caption = 'Top tools'
+      Fill.Color = xFF20312A
+      Padding.Left = 1.000000000000000000
+      Padding.Top = 1.000000000000000000
+      Padding.Right = 1.000000000000000000
+      Padding.Bottom = 4.000000000000000000
+      Size.Width = 640.000000000000000000
+      Size.Height = 96.000000000000000000
+      Size.PlatformDefault = False
+      Stroke.Color = xFF41624F
+      XRadius = 11.000000000000000000
+      YRadius = 11.000000000000000000
+      HeaderDragEnabled = False
+      AllowResize = [rsVertical]
+      MinPaneHeight = 72.000000000000000000
+      HeaderBgColor = xFF20312A
+      HeaderTextColor = xFFE2F7E8
+      HeaderActions = <>
+      object TopLabel: TLabel
+        Align = Client
+        StyledSettings = [Family, Style]
+        Margins.Left = 12.000000000000000000
+        Margins.Top = 8.000000000000000000
+        Margins.Right = 12.000000000000000000
+        Margins.Bottom = 8.000000000000000000
+        Size.Width = 614.000000000000000000
+        Size.Height = 54.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Top fixed pane. Header is visible.'
+        TextSettings.FontColor = xFFDDF3E4
+      end
+    end
+    object BottomPane: TnbDockingPaneContent
+      Align = Bottom
+      Caption = 'Status'
+      Fill.Color = xFF2A2435
+      Padding.Left = 1.000000000000000000
+      Padding.Top = 1.000000000000000000
+      Padding.Right = 1.000000000000000000
+      Padding.Bottom = 4.000000000000000000
+      Size.Width = 640.000000000000000000
+      Size.Height = 78.000000000000000000
+      Size.PlatformDefault = False
+      Stroke.Color = xFF594A70
+      XRadius = 11.000000000000000000
+      YRadius = 11.000000000000000000
+      HeaderVisible = False
+      HeaderDragEnabled = False
+      AllowResize = [rsVertical]
+      MinPaneHeight = 52.000000000000000000
+      HeaderBgColor = xFF2A2435
+      HeaderTextColor = xFFF1E5FF
+      HeaderActions = <>
+      object BottomLabel: TLabel
+        Align = Client
+        StyledSettings = [Family, Style]
+        Margins.Left = 12.000000000000000000
+        Margins.Top = 8.000000000000000000
+        Margins.Right = 12.000000000000000000
+        Margins.Bottom = 8.000000000000000000
+        Size.Width = 614.000000000000000000
+        Size.Height = 58.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Bottom pane: HeaderVisible=False.'
+        TextSettings.FontColor = xFFEDE1FF
+      end
+    end
+    object MainPane: TnbDockingPaneContent
+      Align = Client
+      Caption = 'Main'
+      Fill.Color = xFF182024
+      Padding.Left = 1.000000000000000000
+      Padding.Top = 1.000000000000000000
+      Padding.Right = 1.000000000000000000
+      Padding.Bottom = 4.000000000000000000
+      Size.Width = 640.000000000000000000
+      Size.Height = 386.000000000000000000
+      Size.PlatformDefault = False
+      Stroke.Color = xFF40505A
+      XRadius = 11.000000000000000000
+      YRadius = 11.000000000000000000
+      HeaderDragEnabled = False
+      MinPaneWidth = 240.000000000000000000
+      MinPaneHeight = 180.000000000000000000
+      HeaderBgColor = xFF182024
+      HeaderTextColor = xFFE7F0F4
+      HeaderActions = <
+        item
+          Id = 'hello'
+          Glyph = 'mdl2:E8FB'
+          Hint = 'Demo action'
+          OnExecute = MainPaneHeaderActions0Execute
+        end>
+      object MainLabel: TLabel
+        Align = Client
+        StyledSettings = [Family, Style]
+        Margins.Left = 14.000000000000000000
+        Margins.Top = 14.000000000000000000
+        Margins.Right = 14.000000000000000000
+        Margins.Bottom = 14.000000000000000000
+        Size.Width = 610.000000000000000000
+        Size.Height = 338.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Main client pane. All panes are placed in the .fmx and only event handlers live in code.'
+        TextSettings.FontColor = xFFE7F0F4
+        TextSettings.WordWrap = True
+      end
+    end
+  end
+end

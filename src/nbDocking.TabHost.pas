@@ -251,6 +251,8 @@ type
     procedure SetTabBarActionText(const AValue: string);
     procedure SetTabBarActionVisible(AValue: Boolean);
     procedure SetTabAddVisible(AValue: Boolean);
+  protected
+    procedure DoAddObject(const AObject: TFmxObject); override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -1049,6 +1051,8 @@ begin
      отдельный FTabBarBg с Align=Contents, в самом низу Z-order. *)
   FTabBar := TLayout.Create(Self);
   FTabBar.Parent := Self;
+  FTabBar.Stored := False;
+  FTabBar.Locked := True;
   FTabBar.Align := TAlignLayout.Top;
   FTabBar.Height := TAB_BAR_HEIGHT;
   FTabBar.HitTest := True;
@@ -1057,6 +1061,8 @@ begin
 
   FTabBarBg := TRectangle.Create(Self);
   FTabBarBg.Parent := FTabBar;
+  FTabBarBg.Stored := False;
+  FTabBarBg.Locked := True;
   FTabBarBg.Align := TAlignLayout.Contents;
   FTabBarBg.Fill.Color := FTabBarColor;
   FTabBarBg.Stroke.Kind := TBrushKind.None;
@@ -1065,6 +1071,8 @@ begin
 
   FActionButton := TRectangle.Create(Self);
   FActionButton.Parent := FTabBar;
+  FActionButton.Stored := False;
+  FActionButton.Locked := True;
   FActionButton.Align := TAlignLayout.Right;
   FActionButton.Width := TAB_ADD_BUTTON_WIDTH;
   FActionButton.Margins.Rect := RectF(4, 8, 6, 8);
@@ -1080,6 +1088,8 @@ begin
 
   FActionGlyph := TText.Create(Self);
   FActionGlyph.Parent := FActionButton;
+  FActionGlyph.Stored := False;
+  FActionGlyph.Locked := True;
   FActionGlyph.Align := TAlignLayout.Client;
   FActionGlyph.Text := FTabBarActionText;
   FActionGlyph.TextSettings.HorzAlign := TTextAlign.Center;
@@ -1091,6 +1101,8 @@ begin
 
   FAddButton := TRectangle.Create(Self);
   FAddButton.Parent := FTabBar;
+  FAddButton.Stored := False;
+  FAddButton.Locked := True;
   FAddButton.Align := TAlignLayout.Right;
   FAddButton.Width := TAB_ADD_BUTTON_WIDTH;
   FAddButton.Margins.Rect := RectF(4, 8, 6, 8);
@@ -1106,6 +1118,8 @@ begin
 
   FAddGlyph := TText.Create(Self);
   FAddGlyph.Parent := FAddButton;
+  FAddGlyph.Stored := False;
+  FAddGlyph.Locked := True;
   FAddGlyph.Align := TAlignLayout.Client;
   FAddGlyph.Text := TAB_ICON_ADD;
   FAddGlyph.TextSettings.HorzAlign := TTextAlign.Center;
@@ -1117,6 +1131,8 @@ begin
 
   FDropIndicator := TRectangle.Create(Self);
   FDropIndicator.Parent := FTabBar;
+  FDropIndicator.Stored := False;
+  FDropIndicator.Locked := True;
   FDropIndicator.Width := TAB_DROP_INDICATOR_WIDTH;
   FDropIndicator.Height := TAB_BAR_HEIGHT - 4;
   FDropIndicator.Position.Y := 2;
@@ -1127,7 +1143,28 @@ begin
 
   FContentArea := TLayout.Create(Self);
   FContentArea.Parent := Self;
+  FContentArea.Stored := False;
+  FContentArea.Locked := True;
   FContentArea.Align := TAlignLayout.Client;
+end;
+
+procedure TnbDockingTabHost.DoAddObject(const AObject: TFmxObject);
+begin
+  inherited;
+
+  if (AObject = FTabBar) or (AObject = FContentArea) then
+    Exit;
+  if (AObject = nil) or (AObject.Parent <> Self) then
+    Exit;
+
+  (* Старые формы могли сохранить служебные anonymous layout'ы TabHost.
+     Они создаются конструктором и не должны жить в .fmx как user content. *)
+  if (AObject.Name = '') and (AObject is TLayout) then
+  begin
+    AObject.Stored := False;
+    TControl(AObject).Visible := False;
+    TControl(AObject).HitTest := False;
+  end;
 end;
 
 procedure TnbDockingTabHost.HandleTabBarResize(Sender: TObject);

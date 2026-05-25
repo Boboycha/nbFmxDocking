@@ -24,12 +24,15 @@ interface
 uses
   System.Classes, System.SysUtils, System.UITypes, System.Types,
   System.Generics.Collections,
+  System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Edit,
   FMX.Objects, FMX.Graphics;
 
 type
   TSplitDirection = (sdLeft, sdRight, sdAbove, sdBelow);
   TPaneOrientation = (poHorizontal, poVertical);
+  TPaneResizeSide = (rsHorizontal, rsVertical);
+  TPaneResizeSides = set of TPaneResizeSide;
   TPaneHeaderDragPhase = (phdStart, phdMove, phdEnd);
   TPaneHeaderDragState = (hdsIdle, hdsArmed, hdsDragging);
 
@@ -114,6 +117,9 @@ type
     FActive: Boolean;
     FEditingTitle: Boolean;
     FHeaderDragEnabled: Boolean;
+    FAllowResize: TPaneResizeSides;
+    FMinPaneWidth: Single;
+    FMinPaneHeight: Single;
     FAlwaysShowActive: Boolean;
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
@@ -133,6 +139,8 @@ type
     procedure SetHeaderTextColor(AValue: TAlphaColor);
     procedure SetHeaderVisible(AValue: Boolean);
     function GetHeaderVisible: Boolean;
+    procedure SetMinPaneWidth(AValue: Single);
+    procedure SetMinPaneHeight(AValue: Single);
     procedure SetHeaderActions(AValue: TDockingPaneHeaderActions);
     procedure SetAlwaysShowActive(AValue: Boolean);
     procedure ApplyHeaderColors;
@@ -204,6 +212,7 @@ type
     procedure EnsureFooter;
 
     property Header: TRectangle read FHeader;
+    property TitleBar: TRectangle read FHeader;
     property Footer: TRectangle read FFooter;
     property Active: Boolean read FActive;
     (* True (по умолчанию) — header можно тащить, эмитируется OnHeaderDrag.
@@ -226,6 +235,10 @@ type
       default True;
     property HeaderDragEnabled: Boolean read FHeaderDragEnabled
       write FHeaderDragEnabled default True;
+    property AllowResize: TPaneResizeSides read FAllowResize
+      write FAllowResize default [rsHorizontal, rsVertical];
+    property MinPaneWidth: Single read FMinPaneWidth write SetMinPaneWidth;
+    property MinPaneHeight: Single read FMinPaneHeight write SetMinPaneHeight;
     property AlwaysShowActive: Boolean read FAlwaysShowActive
       write SetAlwaysShowActive default False;
     property HeaderBgColor: TAlphaColor read FHeaderBgColor
@@ -426,6 +439,9 @@ begin
   FHeaderBgColor := TAlphaColor($FF2A2A2A);
   FHeaderTextColor := TAlphaColor($FFE0E0E0);
   FHeaderDragEnabled := True;
+  FAllowResize := [rsHorizontal, rsVertical];
+  FMinPaneWidth := 50;
+  FMinPaneHeight := 50;
 
   FHeaderActions := TDockingPaneHeaderActions.Create(Self);
   FActionButtons := TList<TPaneHeaderActionButton>.Create;
@@ -602,6 +618,20 @@ end;
 function TnbDockingPaneContent.GetHeaderVisible: Boolean;
 begin
   Result := (FHeader <> nil) and FHeader.Visible;
+end;
+
+procedure TnbDockingPaneContent.SetMinPaneWidth(AValue: Single);
+begin
+  AValue := Max(0, AValue);
+  if SameValue(FMinPaneWidth, AValue) then Exit;
+  FMinPaneWidth := AValue;
+end;
+
+procedure TnbDockingPaneContent.SetMinPaneHeight(AValue: Single);
+begin
+  AValue := Max(0, AValue);
+  if SameValue(FMinPaneHeight, AValue) then Exit;
+  FMinPaneHeight := AValue;
 end;
 
 procedure TnbDockingPaneContent.SetHeaderActions(

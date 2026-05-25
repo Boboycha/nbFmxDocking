@@ -27,6 +27,9 @@ begin
     'Caption',
     'HeaderVisible',
     'HeaderDragEnabled',
+    'AllowResize',
+    'MinPaneWidth',
+    'MinPaneHeight',
     'AlwaysShowActive',
     'HeaderBgColor',
     'HeaderTextColor',
@@ -47,6 +50,7 @@ begin
     'BackgroundColor',
     'AutoMatchBg',
     'AutoBuildDesignChildren',
+    'DesignChildrenLayoutMode',
     'DesignChildrenOrientation',
     'SplitterSize',
     'SplitterColor'
