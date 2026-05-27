@@ -88,6 +88,7 @@ type
       Shift: TShiftState; X, Y: Single);
 
     procedure WireContent(AContent: TnbDockingPaneContent);
+    procedure UnwireContent(AContent: TnbDockingPaneContent);
     function ContainsNestedHost(AContent: TnbDockingPaneContent): Boolean;
     procedure NormalizeContainerContent(AContent: TnbDockingPaneContent);
     procedure RebuildTreeFromDesignChildren;
@@ -351,6 +352,16 @@ begin
   AContent.OnActivateRequest := HandleContentActivateRequest;
   AContent.OnHeaderChanged := HandleContentHeaderChanged;
   AContent.OnHeaderDrag := HandleContentHeaderDrag;
+end;
+
+procedure TnbDockingPaneHost.UnwireContent(AContent: TnbDockingPaneContent);
+begin
+  if AContent = nil then Exit;
+  AContent.OnSplitRequest := nil;
+  AContent.OnCloseRequest := nil;
+  AContent.OnActivateRequest := nil;
+  AContent.OnHeaderChanged := nil;
+  AContent.OnHeaderDrag := nil;
 end;
 
 function TnbDockingPaneHost.ContainsNestedHost(
@@ -1070,6 +1081,7 @@ begin
   (* CloseActive минус Free контента — caller перевесит его на новый Parent. *)
   Result.Deactivate;
   Result.SetActive(False);
+  UnwireContent(Result);
   Result.Parent := nil;
 
   FActiveLeaf := nil;

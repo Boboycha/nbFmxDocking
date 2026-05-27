@@ -1,4 +1,4 @@
-unit nbDocking.Demo;
+﻿unit nbDocking.Demo;
 
 (*
   DEBUG-заглушка для проверки движка докинга без реального контента.

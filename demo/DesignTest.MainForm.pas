@@ -1,4 +1,4 @@
-unit DesignTest.MainForm;
+﻿unit DesignTest.MainForm;
 
 interface
 

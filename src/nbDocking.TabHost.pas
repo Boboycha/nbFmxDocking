@@ -1348,7 +1348,8 @@ begin
   begin
     Tab := FPendingCloseTabs[0];
     FPendingCloseTabs.Delete(0);
-    if FTabs.IndexOf(Tab) >= 0 then
+    if (FTabs.IndexOf(Tab) >= 0) and (Tab.PaneHost <> nil)
+       and Tab.PaneHost.IsEmpty then
       CloseTab(Tab);
   end;
 end;
@@ -1765,8 +1766,11 @@ begin
     ATab.PaneHost.Tree.EnumerateLeaves(
       procedure(ALeaf: TPaneLeaf)
       begin
-        if (ALeaf.Content <> nil) and (not ALeaf.Content.CanClose) then
-          AllOk := False;
+        if Assigned(ALeaf.Content) then
+        begin
+          if not ALeaf.Content.CanClose then
+            AllOk := False;
+        end;
       end);
   Result := AllOk;
 end;

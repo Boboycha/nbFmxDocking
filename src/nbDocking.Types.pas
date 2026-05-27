@@ -528,7 +528,8 @@ begin
 
   if (AObject is TnbDockingPaneContent)
      and (AObject.Parent = Self)
-     and (Parent <> nil) then
+     and (Parent <> nil)
+     and not (csLoading in ComponentState) then
     AObject.Parent := Parent;
 end;
 
