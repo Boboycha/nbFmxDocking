@@ -95,9 +95,17 @@ type
 
   (* Кнопка action в rtHeader — styled FMX button с привязанным id. *)
   TPaneHeaderActionButton = class(TSpeedButton)
+  private
+    FLocalBg: TAlphaColor;
+    FLocalBorder: TAlphaColor;
+    FLocalText: TAlphaColor;
+    procedure HandleApplyStyleLookup(Sender: TObject);
+    procedure PaintLocalChrome;
   public
     ActionId: string;
     UsesIconFont: Boolean;
+    constructor Create(AOwner: TComponent); override;
+    procedure ApplyLocalChrome(ABg, ABorder, AText: TAlphaColor);
   end;
 
   TnbDockingPaneContent = class(TRectangle)
@@ -265,9 +273,9 @@ const
   HEADER_HEIGHT       = 32;
   ACTION_BTN_WIDTH    = 22;
   ACTION_BTN_SLOT     = 25;   (* ширина кнопки + правый отступ *)
-  CARD_RADIUS         = 11;
-  CARD_PADDING_OTHER  = 1;
-  CARD_PADDING_BOTTOM = 4;    (* защита скруглённого нижнего угла *)
+  CARD_RADIUS         = 0;
+  CARD_PADDING_OTHER  = 0;
+  CARD_PADDING_BOTTOM = 0;    (* защита скруглённого нижнего угла *)
   STROKE_THICKNESS    = 1.0;
   DRAG_THRESHOLD      = 5;
   DOCK_ICON_FONT      = 'Segoe MDL2 Assets';
@@ -417,6 +425,57 @@ begin
     TnbDockingPaneContent(Owner).RebuildActionButtons;
 end;
 
+{ TPaneHeaderActionButton }
+
+constructor TPaneHeaderActionButton.Create(AOwner: TComponent);
+begin
+  inherited;
+  FLocalBg := TAlphaColor($FF2A2A2A);
+  FLocalBorder := TAlphaColor($40E0E0E0);
+  FLocalText := TAlphaColor($FFE0E0E0);
+  OnApplyStyleLookup := HandleApplyStyleLookup;
+end;
+
+procedure TPaneHeaderActionButton.HandleApplyStyleLookup(Sender: TObject);
+begin
+  PaintLocalChrome;
+end;
+
+procedure TPaneHeaderActionButton.PaintLocalChrome;
+var
+  Obj: TFmxObject;
+  Shape: TShape;
+
+  procedure PaintShape(const AName: string);
+  begin
+    Obj := FindStyleResource(AName);
+    if Obj is TShape then
+    begin
+      Shape := TShape(Obj);
+      Shape.Fill.Kind := TBrushKind.Solid;
+      Shape.Fill.Color := FLocalBg;
+      Shape.Stroke.Kind := TBrushKind.Solid;
+      Shape.Stroke.Color := FLocalBorder;
+    end;
+  end;
+
+begin
+  StyledSettings := StyledSettings - [TStyledSetting.FontColor];
+  TextSettings.FontColor := FLocalText;
+  PaintShape('background');
+  PaintShape('bg');
+end;
+
+procedure TPaneHeaderActionButton.ApplyLocalChrome(ABg, ABorder,
+  AText: TAlphaColor);
+begin
+  FLocalBg := ABg;
+  FLocalBorder := ABorder;
+  FLocalText := AText;
+  ApplyStyleLookup;
+  PaintLocalChrome;
+end;
+
 { TnbDockingPaneContent }
 
 constructor TnbDockingPaneContent.Create(AOwner: TComponent);
@@ -427,8 +486,8 @@ begin
      по краям) + цветной Stroke (индикатор активности). *)
   Align := TAlignLayout.Client;
   HitTest := True;
-  XRadius := CARD_RADIUS;
-  YRadius := CARD_RADIUS;
+  XRadius := 0;
+  YRadius := 0;
   Padding.Rect := RectF(CARD_PADDING_OTHER, CARD_PADDING_OTHER,
                         CARD_PADDING_OTHER, CARD_PADDING_BOTTOM);
   Fill.Kind := TBrushKind.Solid;
@@ -561,6 +620,9 @@ begin
     else
       Btn.TextSettings.Font.Family := '';
     Btn.TextSettings.FontColor := FHeaderTextColor;
+    Btn.ApplyLocalChrome(FHeaderBgColor,
+      BlendColor(FHeaderBgColor, FHeaderTextColor, 0.22),
+      FHeaderTextColor);
   end;
 
   UpdateStrokeForActive;
@@ -963,6 +1025,9 @@ begin
     end;
     Btn.TextSettings.FontColor := FHeaderTextColor;
     Btn.TextSettings.Trimming := TTextTrimming.None;
+    Btn.ApplyLocalChrome(FHeaderBgColor,
+      BlendColor(FHeaderBgColor, FHeaderTextColor, 0.22),
+      FHeaderTextColor);
     Btn.Opacity := 0.72;
     Btn.HitTest := True;
     Btn.ActionId := Action.Id;
