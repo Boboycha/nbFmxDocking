@@ -26,6 +26,7 @@ uses
   System.Generics.Collections,
   System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Edit,
+  FMX.Styles.Objects,
   FMX.Objects, FMX.Graphics;
 
 type
@@ -134,6 +135,7 @@ type
 
     FHeaderActions: TDockingPaneHeaderActions;
     FActionButtons: TList<TPaneHeaderActionButton>;
+    FHeaderActionStyleLookupPrefix: string;
 
     FOnSplitRequest: TPaneSplitRequestEvent;
     FOnCloseRequest: TPaneCloseRequestEvent;
@@ -150,12 +152,14 @@ type
     procedure SetMinPaneWidth(AValue: Single);
     procedure SetMinPaneHeight(AValue: Single);
     procedure SetHeaderActions(AValue: TDockingPaneHeaderActions);
+    procedure SetHeaderActionStyleLookupPrefix(const AValue: string);
     procedure SetAlwaysShowActive(AValue: Boolean);
     procedure ApplyHeaderColors;
     procedure DoHeaderChanged;
     procedure UpdateStrokeForActive;
     procedure RebuildActionButtons;
     procedure LayoutActionButtons;
+    function ScopedHeaderActionStyle(const ABaseStyle: string): string;
 
     procedure HandleSelfMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -223,6 +227,9 @@ type
     property TitleBar: TRectangle read FHeader;
     property Footer: TRectangle read FFooter;
     property Active: Boolean read FActive;
+    property HeaderActionStyleLookupPrefix: string
+      read FHeaderActionStyleLookupPrefix
+      write SetHeaderActionStyleLookupPrefix;
     (* True (по умолчанию) — header можно тащить, эмитируется OnHeaderDrag.
        False — drag-UX полностью отключён (для встроенных sub-pane'ов,
        которые не должны перетаскиваться между host'ами). *)
@@ -445,6 +452,8 @@ procedure TPaneHeaderActionButton.PaintLocalChrome;
 var
   Obj: TFmxObject;
   Shape: TShape;
+  Txt: TTextControl;
+  BtnTxt: TButtonStyleTextObject;
 
   procedure PaintShape(const AName: string);
   begin
@@ -459,11 +468,65 @@ var
     end;
   end;
 
+  procedure PaintTextResource;
+  begin
+    Obj := FindStyleResource('text');
+    if Obj is TButtonStyleTextObject then
+    begin
+      BtnTxt := TButtonStyleTextObject(Obj);
+      BtnTxt.NormalColor := FLocalText;
+      BtnTxt.HotColor := FLocalText;
+      BtnTxt.FocusedColor := FLocalText;
+      BtnTxt.PressedColor := FLocalText;
+      if UsesIconFont then
+      begin
+        BtnTxt.TextSettings.Font.Family := DOCK_ICON_FONT;
+        BtnTxt.TextSettings.Font.Size := 13;
+      end
+      else
+      begin
+        BtnTxt.TextSettings.Font.Family := '';
+        BtnTxt.TextSettings.Font.Size := 12;
+      end;
+      BtnTxt.TextSettings.FontColor := FLocalText;
+      BtnTxt.TextSettings.HorzAlign := TTextAlign.Center;
+      BtnTxt.TextSettings.VertAlign := TTextAlign.Center;
+      BtnTxt.TextSettings.Trimming := TTextTrimming.None;
+    end
+    else if Obj is TTextControl then
+    begin
+      Txt := TTextControl(Obj);
+      Txt.StyledSettings := Txt.StyledSettings - [TStyledSetting.FontColor,
+        TStyledSetting.Family, TStyledSetting.Size];
+      if UsesIconFont then
+      begin
+        Txt.TextSettings.Font.Family := DOCK_ICON_FONT;
+        Txt.TextSettings.Font.Size := 13;
+      end
+      else
+      begin
+        Txt.TextSettings.Font.Family := '';
+        Txt.TextSettings.Font.Size := 12;
+      end;
+      Txt.TextSettings.FontColor := FLocalText;
+      Txt.TextSettings.HorzAlign := TTextAlign.Center;
+      Txt.TextSettings.VertAlign := TTextAlign.Center;
+      Txt.TextSettings.Trimming := TTextTrimming.None;
+    end;
+  end;
+
 begin
-  StyledSettings := StyledSettings - [TStyledSetting.FontColor];
+  StyledSettings := StyledSettings - [TStyledSetting.FontColor,
+    TStyledSetting.Family, TStyledSetting.Size];
+  if UsesIconFont then
+  begin
+    TextSettings.Font.Family := DOCK_ICON_FONT;
+    TextSettings.Font.Size := 13;
+  end;
   TextSettings.FontColor := FLocalText;
   PaintShape('background');
   PaintShape('bg');
+  PaintTextResource;
 end;
 
 procedure TPaneHeaderActionButton.ApplyLocalChrome(ABg, ABorder,
@@ -604,15 +667,16 @@ begin
   if FCaptionLabel <> nil then
     FCaptionLabel.TextSettings.FontColor := FHeaderTextColor;
 
-  (* Stroke is intentionally subtle: terminal themes often use bright text,
-     and using that color directly makes pane borders look noisy. *)
-  FActiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.30);
+  (* Activity is shown only by the pane outline; the content keeps its own
+     terminal/theme colors. *)
+  FActiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.48);
   FInactiveStrokeColor := BlendColor(FHeaderBgColor, FHeaderTextColor, 0.13);
 
   (* Header action buttons are flat; only glyph color follows pane header. *)
   for I := 0 to FActionButtons.Count - 1 do
   begin
     Btn := FActionButtons[I];
+    Btn.StyleLookup := ScopedHeaderActionStyle('speedbuttonstyle');
     Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
       TStyledSetting.Family, TStyledSetting.Size];
     if Btn.UsesIconFont then
@@ -630,10 +694,18 @@ end;
 
 procedure TnbDockingPaneContent.UpdateStrokeForActive;
 begin
+  Stroke.Kind := TBrushKind.Solid;
+  Stroke.Thickness := STROKE_THICKNESS;
+  Padding.Rect := RectF(CARD_PADDING_OTHER, CARD_PADDING_OTHER,
+    CARD_PADDING_OTHER, CARD_PADDING_OTHER);
   if FActive or FAlwaysShowActive then
+  begin
     Stroke.Color := FActiveStrokeColor
+  end
   else
+  begin
     Stroke.Color := FInactiveStrokeColor;
+  end;
 end;
 
 procedure TnbDockingPaneContent.SetCaption(const AValue: string);
@@ -702,6 +774,23 @@ procedure TnbDockingPaneContent.SetHeaderActions(
 begin
   FHeaderActions.Assign(AValue);
   RebuildActionButtons;
+end;
+
+function TnbDockingPaneContent.ScopedHeaderActionStyle(
+  const ABaseStyle: string): string;
+begin
+  if FHeaderActionStyleLookupPrefix = '' then
+    Result := ABaseStyle
+  else
+    Result := FHeaderActionStyleLookupPrefix + ABaseStyle;
+end;
+
+procedure TnbDockingPaneContent.SetHeaderActionStyleLookupPrefix(
+  const AValue: string);
+begin
+  if FHeaderActionStyleLookupPrefix = AValue then Exit;
+  FHeaderActionStyleLookupPrefix := AValue;
+  ApplyHeaderColors;
 end;
 
 procedure TnbDockingPaneContent.SetAlwaysShowActive(AValue: Boolean);
@@ -1007,6 +1096,7 @@ begin
     Btn.Width := ACTION_BTN_WIDTH;
     Btn.Height := HEADER_HEIGHT - 7;
     Btn.Margins.Rect := RectF(0, 3, 4, 3);
+    Btn.StyleLookup := ScopedHeaderActionStyle('speedbuttonstyle');
     Btn.Text := HeaderActionGlyphFor(Action.Id, Action.Glyph, UsesIconFont);
     Btn.UsesIconFont := UsesIconFont;
     Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
@@ -1062,13 +1152,19 @@ end;
 procedure TnbDockingPaneContent.HandleActionMouseEnter(Sender: TObject);
 begin
   if Sender is TPaneHeaderActionButton then
+  begin
     TPaneHeaderActionButton(Sender).Opacity := 1.0;
+    TPaneHeaderActionButton(Sender).PaintLocalChrome;
+  end;
 end;
 
 procedure TnbDockingPaneContent.HandleActionMouseLeave(Sender: TObject);
 begin
   if Sender is TPaneHeaderActionButton then
+  begin
     TPaneHeaderActionButton(Sender).Opacity := 0.72;
+    TPaneHeaderActionButton(Sender).PaintLocalChrome;
+  end;
 end;
 
 procedure TnbDockingPaneContent.EnsureFooter;
