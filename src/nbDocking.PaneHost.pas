@@ -914,6 +914,12 @@ begin
     if (Leaf <> nil) and (Leaf = FActiveLeaf) then
       SyncBgFromContent(Sender);
   end;
+  if FFocusMode then
+  begin
+    Leaf := FindLeafByContent(Sender);
+    if (Leaf <> nil) and (Leaf = FActiveLeaf) then
+      RebuildVisualTree;
+  end;
   if Assigned(FOnContentHeaderChanged) then
     FOnContentHeaderChanged(Self, Sender);
 end;
@@ -1367,12 +1373,42 @@ var
   Item: TPaneFocusItem;
   TopOffset: Single;
   CountText: string;
+  Bg, TextColor, Surface, Selected, Muted, Accent: TAlphaColor;
+
+  function Blend(C1, C2: TAlphaColor; W2: Single): TAlphaColor;
+  var
+    W1: Single;
+  begin
+    if W2 < 0 then W2 := 0;
+    if W2 > 1 then W2 := 1;
+    W1 := 1 - W2;
+    Result :=
+      (Round(((C1 shr 24) and $FF) * W1 + ((C2 shr 24) and $FF) * W2) shl 24) or
+      (Round(((C1 shr 16) and $FF) * W1 + ((C2 shr 16) and $FF) * W2) shl 16) or
+      (Round(((C1 shr 8) and $FF) * W1 + ((C2 shr 8) and $FF) * W2) shl 8) or
+      Round((C1 and $FF) * W1 + (C2 and $FF) * W2);
+  end;
 begin
   if FActiveLeaf = nil then
     FActiveLeaf := FTree.FirstLeaf;
   if FActiveLeaf = nil then Exit;
 
   CountText := FTree.LeafCount.ToString;
+  if FActiveLeaf.Content <> nil then
+  begin
+    Bg := FActiveLeaf.Content.HeaderBgColor;
+    TextColor := FActiveLeaf.Content.HeaderTextColor;
+  end
+  else
+  begin
+    Bg := FBackgroundColor;
+    TextColor := TAlphaColor($FFE0E0E0);
+  end;
+
+  Surface := Blend(Bg, TextColor, 0.08);
+  Selected := Blend(Bg, TextColor, 0.16);
+  Muted := Blend(TextColor, Bg, 0.42);
+  Accent := TextColor;
 
   Sidebar := TLayout.Create(Self);
   Sidebar.Parent := FRootLayout;
@@ -1383,7 +1419,7 @@ begin
   SidebarBg := TRectangle.Create(Self);
   SidebarBg.Parent := Sidebar;
   SidebarBg.Align := TAlignLayout.Contents;
-  SidebarBg.Fill.Color := TAlphaColor($FF1E2233);
+  SidebarBg.Fill.Color := Surface;
   SidebarBg.Stroke.Kind := TBrushKind.None;
   SidebarBg.HitTest := False;
   SidebarBg.SendToBack;
@@ -1395,7 +1431,7 @@ begin
   TitleLabel.Text := 'Panels - ' + CountText;
   TitleLabel.StyledSettings := [];
   TitleLabel.TextSettings.Font.Size := 12;
-  TitleLabel.TextSettings.FontColor := TAlphaColor($FFB8BED6);
+  TitleLabel.TextSettings.FontColor := Muted;
   TitleLabel.TextSettings.VertAlign := TTextAlign.Center;
   TitleLabel.HitTest := False;
 
@@ -1424,9 +1460,9 @@ begin
       Item.HitTest := True;
       Item.OnMouseDown := HandleFocusItemMouseDown;
       if ALeaf = FActiveLeaf then
-        Item.Fill.Color := TAlphaColor($FF2A2E44)
+        Item.Fill.Color := Selected
       else
-        Item.Fill.Color := TAlphaColor($001E2233);
+        Item.Fill.Color := TAlphaColor(0);
 
       ItemTitle := TLabel.Create(Self);
       ItemTitle.Parent := Item;
@@ -1437,9 +1473,9 @@ begin
       ItemTitle.StyledSettings := [];
       ItemTitle.TextSettings.Font.Size := 12;
       if ALeaf = FActiveLeaf then
-        ItemTitle.TextSettings.FontColor := TAlphaColor($FF00E08A)
+        ItemTitle.TextSettings.FontColor := Accent
       else
-        ItemTitle.TextSettings.FontColor := TAlphaColor($FFA8ADC4);
+        ItemTitle.TextSettings.FontColor := TextColor;
       ItemTitle.TextSettings.VertAlign := TTextAlign.Center;
       ItemTitle.HitTest := False;
 
@@ -1450,7 +1486,7 @@ begin
       ItemSubTitle.Text := 'content';
       ItemSubTitle.StyledSettings := [];
       ItemSubTitle.TextSettings.Font.Size := 11;
-      ItemSubTitle.TextSettings.FontColor := TAlphaColor($FF767B91);
+      ItemSubTitle.TextSettings.FontColor := Muted;
       ItemSubTitle.TextSettings.VertAlign := TTextAlign.Center;
       ItemSubTitle.HitTest := False;
 
