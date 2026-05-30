@@ -12,6 +12,7 @@ dcu/
 *.map
 *.tds
 *.hpp
+*.res
 
 # RAD Studio generated/local files
 *.identcache
