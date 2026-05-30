@@ -25,11 +25,15 @@
 {$IMAGEBASE $400000}
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
+{$DESCRIPTION 'nb FMX Docking components'}
+{$DESIGNONLY}
 {$IMPLICITBUILD ON}
 
 requires
   rtl,
-  fmx;
+  fmx,
+  vcl,
+  DesignIDE;
 
 contains
   nbDocking.Types in 'nbDocking.Types.pas',
@@ -37,7 +41,9 @@ contains
   nbDocking.PaneHost in 'nbDocking.PaneHost.pas',
   nbDocking.DropOverlay in 'nbDocking.DropOverlay.pas',
   nbDocking.TabHost in 'nbDocking.TabHost.pas',
-  nbDocking.Demo in 'nbDocking.Demo.pas';
+  nbDocking.Demo in 'nbDocking.Demo.pas',
+  nbDocking.DesignEditors in 'nbDocking.DesignEditors.pas',
+  Reg_nbFMXDocking in 'Reg_nbFMXDocking.pas';
 
 (* План пакета по итерациям:
 
