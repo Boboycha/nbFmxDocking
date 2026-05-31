@@ -144,6 +144,7 @@ type
     destructor Destroy; override;
 
     procedure SetInitialContent(AContent: TnbDockingPaneContent);
+    procedure ReplaceTreeRoot(ANode: TPaneNode; AActiveLeaf: TPaneLeaf = nil);
     function SplitActive(ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent = nil): TPaneLeaf;
     procedure CloseActive;
@@ -986,6 +987,47 @@ begin
 
   FTree.SetRootContent(AContent);
   InternalSetActive(FTree.FirstLeaf);
+end;
+
+procedure TnbDockingPaneHost.ReplaceTreeRoot(ANode: TPaneNode;
+  AActiveLeaf: TPaneLeaf);
+
+  procedure WireNode(ANode: TPaneNode);
+  var
+    Split: TPaneSplit;
+    I: Integer;
+  begin
+    if ANode = nil then Exit;
+    if ANode is TPaneLeaf then
+    begin
+      if TPaneLeaf(ANode).Content <> nil then
+      begin
+        TPaneLeaf(ANode).Content.Parent := nil;
+        WireContent(TPaneLeaf(ANode).Content);
+      end;
+      Exit;
+    end;
+
+    Split := ANode.AsSplit;
+    if Split = nil then Exit;
+    for I := 0 to Split.ChildCount - 1 do
+      WireNode(Split.Children[I]);
+  end;
+
+begin
+  WireNode(ANode);
+  FBuilding := True;
+  try
+    FTree.SetRootNode(ANode);
+  finally
+    FBuilding := False;
+  end;
+
+  FActiveLeaf := nil;
+  if AActiveLeaf = nil then
+    AActiveLeaf := FTree.FirstLeaf;
+  InternalSetActive(AActiveLeaf);
+  RebuildVisualTree;
 end;
 
 function TnbDockingPaneHost.SplitActive(ADirection: TSplitDirection;

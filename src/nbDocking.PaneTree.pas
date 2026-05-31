@@ -91,6 +91,7 @@ type
     destructor Destroy; override;
 
     procedure Clear;
+    procedure SetRootNode(ANode: TPaneNode);
     function SetRootContent(AContent: TnbDockingPaneContent): TPaneLeaf;
     function SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent): TPaneLeaf;
@@ -338,6 +339,15 @@ end;
 procedure TPaneTree.Clear;
 begin
   FreeAndNil(FRoot);
+  DoChanged;
+end;
+
+procedure TPaneTree.SetRootNode(ANode: TPaneNode);
+begin
+  if ANode <> nil then
+    ANode.FParent := nil;
+  FRoot.Free;
+  FRoot := ANode;
   DoChanged;
 end;
 
