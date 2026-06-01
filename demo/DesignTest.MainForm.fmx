@@ -148,7 +148,7 @@ object DesignTestForm: TDesignTestForm
       HeaderActions = <
         item
           Id = 'hello'
-          Glyph = 'mdl2:E8FB'
+          Glyph = 'select'
           Hint = 'Demo action'
           OnExecute = MainPaneHeaderActions0Execute
         end>

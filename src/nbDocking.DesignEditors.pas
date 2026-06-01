@@ -62,11 +62,6 @@ type
     property SelectedValue: string read FSelectedValue;
   end;
 
-const
-  MDL2_ICON_FONT = 'Segoe MDL2 Assets';
-  MDL2_GLYPH_LEFT = 10;
-  MDL2_TEXT_LEFT = 54;
-
 function PaneCount(AHost: TnbDockingPaneHost): Integer;
 var
   I: Integer;
@@ -451,59 +446,34 @@ end;
 
 { TnbDockingHeaderGlyphProperty }
 
-function ExtractMdl2Code(const AValue: string; out ACode: Integer): Boolean;
-var
-  P: Integer;
-  HexText: string;
-begin
-  P := Pos('MDL2:', UpperCase(AValue));
-  if P > 0 then
-  begin
-    HexText := Copy(AValue, P + 5, 4);
-    Result := TryStrToInt('$' + HexText, ACode);
-  end
-  else
-    Result := False;
-end;
-
-function GlyphCodeForValue(const AValue: string; out ACode: Integer): Boolean;
-begin
-  Result := True;
-  if SameText(AValue, '+') or SameText(AValue, 'add') or
-    SameText(AValue, 'plus') then
-    ACode := $E710
-  else if SameText(AValue, 'x') or SameText(AValue, 'close') then
-    ACode := $E711
-  else if SameText(AValue, 'broadcast') then
-    ACode := $E909
-  else if SameText(AValue, 'sftp') or SameText(AValue, 'folder') then
-    ACode := $E8B7
-  else if SameText(AValue, 'theme') then
-    ACode := $E790
-  else
-    Result := ExtractMdl2Code(AValue, ACode);
-end;
-
 function TnbDockingHeaderGlyphProperty.GetAttributes: TPropertyAttributes;
 begin
   Result := inherited GetAttributes + [paDialog];
 end;
 
-{$I nbDocking.MDL2Glyphs.inc}
-
 procedure AddHeaderGlyphValues(AValues: TStrings);
 begin
   AValues.Add('');
-  AValues.Add('+');
-  AValues.Add('add');
   AValues.Add('plus');
-  AValues.Add('x');
   AValues.Add('close');
+  AValues.Add('save');
+  AValues.Add('delete');
+  AValues.Add('edit');
+  AValues.Add('copy');
+  AValues.Add('paste');
+  AValues.Add('download');
+  AValues.Add('refresh');
+  AValues.Add('play');
+  AValues.Add('back');
+  AValues.Add('select');
+  AValues.Add('key');
+  AValues.Add('server');
   AValues.Add('broadcast');
   AValues.Add('sftp');
   AValues.Add('folder');
+  AValues.Add('focus');
+  AValues.Add('scripts');
   AValues.Add('theme');
-  AddKnownMdl2GlyphValues(AValues);
 end;
 
 procedure TnbDockingHeaderGlyphProperty.Edit;
@@ -661,28 +631,18 @@ end;
 procedure TMdl2GlyphPicker.HandleListDrawItem(Control: TWinControl;
   Index: Integer; Rect: TRect; State: TOwnerDrawState);
 var
-  Code: Integer;
-  GlyphText, Value: string;
+  Value: string;
   TextRect: TRect;
 begin
   Value := FListBox.Items[Index];
   FListBox.Canvas.FillRect(Rect);
-
-  if GlyphCodeForValue(Value, Code) then
-  begin
-    GlyphText := Char(Code);
-    FListBox.Canvas.Font.Name := MDL2_ICON_FONT;
-    FListBox.Canvas.Font.Size := 16;
-    FListBox.Canvas.TextOut(Rect.Left + MDL2_GLYPH_LEFT, Rect.Top + 5,
-      GlyphText);
-  end;
 
   FListBox.Canvas.Font.Assign(Font);
   FListBox.Canvas.Font.Color := clWindowText;
   if odSelected in State then
     FListBox.Canvas.Font.Color := clHighlightText;
   TextRect := Rect;
-  TextRect.Left := Rect.Left + MDL2_TEXT_LEFT;
+  TextRect.Left := Rect.Left + 10;
   DrawText(FListBox.Canvas.Handle, PChar(Value), -1, TextRect,
     DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS);
 end;
@@ -694,7 +654,7 @@ end;
 
 procedure TMdl2GlyphPicker.SelectValue(const AValue: string);
 var
-  I, CurrentCode, ItemCode: Integer;
+  I: Integer;
 begin
   if AValue = '' then
   begin
@@ -708,17 +668,6 @@ begin
     FListBox.ItemIndex := I;
     Exit;
   end;
-
-  if not GlyphCodeForValue(AValue, CurrentCode) then
-    Exit;
-
-  for I := 0 to FListBox.Items.Count - 1 do
-    if GlyphCodeForValue(FListBox.Items[I], ItemCode) and
-      (ItemCode = CurrentCode) then
-    begin
-      FListBox.ItemIndex := I;
-      Exit;
-    end;
 end;
 
 procedure RegisterDockingEditors;

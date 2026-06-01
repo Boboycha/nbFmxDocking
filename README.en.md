@@ -1,6 +1,6 @@
-# nbFMXDocking
+﻿# nbFMXDocking
 
-Languages: [Русский](README.md) | [English](README.en.md) | [O'zbekcha](README.uz.md)
+Languages: [Р СѓСЃСЃРєРёР№](README.md) | [English](README.en.md) | [O'zbekcha](README.uz.md)
 
 `nbFMXDocking` is a Delphi FireMonkey component set for tabbed docking UI:
 tabs, split panes, pane header dragging, header actions, and design-time layout
@@ -194,7 +194,7 @@ begin
   HeaderBgColor := $FF1C2330;
   HeaderTextColor := $FFE6EDF3;
 
-  AddHeaderAction('clear', 'MDL2:E74D', HandleClear, 'Clear log');
+  AddHeaderAction('clear', 'delete', HandleClear, 'Clear log');
   AddDefaultCloseAction;
 
   FMemo := TMemo.Create(Self);
@@ -330,7 +330,7 @@ Each action contains:
 Runtime example:
 
 ```pascal
-AddHeaderAction('refresh', 'MDL2:E72C', HandleRefresh, 'Refresh');
+AddHeaderAction('refresh', 'refresh', HandleRefresh, 'Refresh');
 AddHeaderAction('theme', 'theme', HandleTheme, 'Theme');
 AddDefaultCloseAction;
 ```
@@ -349,12 +349,11 @@ rightmost button.
 | `broadcast`, `B` | broadcast |
 | `sftp`, `folder`, `S` | folder |
 | `theme`, `T` | theme |
-| `MDL2:E712` | exact Segoe MDL2 Assets glyph |
 
 In Object Inspector, `Glyph` has an editor with a `...` button. It allows you
-to search and select MDL2 symbols visually.
+to search and select vector aliases visually.
 
-If `Glyph` is not recognized as an alias or MDL2 code, it is rendered as
+If `Glyph` is not recognized as a vector alias, it is rendered as
 regular text.
 
 ## Important Properties
@@ -534,4 +533,3 @@ Planned next layers:
 
 - [Development Report](docs/DEVELOPMENT_REPORT.md)
 - [Developer Guide](docs/DEVELOPER_GUIDE.md)
-

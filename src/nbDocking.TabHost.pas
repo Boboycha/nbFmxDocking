@@ -32,17 +32,6 @@ const
   TAB_GROUP_CAPTION           = 'Group';
   TAB_BUTTON_HOVER_BLEND      = 0.22;
   TAB_BUTTON_STROKE_BLEND     = 0.84;
-  {$IFDEF LINUX}
-  TAB_ICON_FONT               = '';
-  TAB_ICON_GROUP              = '*';
-  TAB_ICON_CLOSE              = 'x';
-  TAB_ICON_ADD                = '+';
-  {$ELSE}
-  TAB_ICON_FONT               = 'Segoe MDL2 Assets';
-  TAB_ICON_GROUP              = #$E902;
-  TAB_ICON_CLOSE              = #$E711;
-  TAB_ICON_ADD                = #$E710;
-  {$ENDIF}
 
 type
   TnbDockingTabHost = class;
@@ -89,6 +78,20 @@ type
     AOldTab, ANewTab: TDockingTab) of object;
   TTabBarActionEvent = procedure(Sender: TObject) of object;
 
+  TTabVectorIcon = class(TControl)
+  private
+    FIconColor: TAlphaColor;
+    FIconName: string;
+    procedure SetIconColor(const AValue: TAlphaColor);
+    procedure SetIconName(const AValue: string);
+  protected
+    procedure Paint; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    property IconName: string read FIconName write SetIconName;
+    property IconColor: TAlphaColor read FIconColor write SetIconColor;
+  end;
+
   TTabDragState = (
     dsIdle,
     dsArmed,            (* MouseDown, ждём TAB_DRAG_THRESHOLD смещения *)
@@ -99,11 +102,11 @@ type
   TTabButton = class(TRectangle)
   private
     FTab: TDockingTab;
-    FGroupGlyph: TText;
+    FGroupGlyph: TTabVectorIcon;
     FCaptionLabel: TLabel;
     FCaptionEdit: TEdit;
     FCloseBtn: TRectangle;
-    FCloseGlyph: TText;
+    FCloseGlyph: TTabVectorIcon;
     FDragState: TTabDragState;
     FDragStartX: Single;
     FDragStartY: Single;
@@ -144,9 +147,9 @@ type
     FTabBar: TLayout;
     FTabBarBg: TRectangle;
     FActionButton: TRectangle;
-    FActionGlyph: TText;
+    FActionGlyph: TTabVectorIcon;
     FAddButton: TRectangle;
-    FAddGlyph: TText;
+    FAddGlyph: TTabVectorIcon;
     FDropIndicator: TRectangle;
     FContentArea: TLayout;
 
@@ -377,6 +380,78 @@ begin
     Result := TAlphaColor($FFF2F6FA);
 end;
 
+procedure BuildTabIconPath(const AName: string; APath: TPathData; out AFill: Boolean);
+var
+  N: string;
+begin
+  APath.Clear;
+  AFill := False;
+  N := LowerCase(Trim(AName));
+  if N = 'group' then
+    APath.Data := 'M 8 8 A 3 3 0 1 0 8 14 A 3 3 0 1 0 8 8 M 16 8 A 3 3 0 1 0 16 14 A 3 3 0 1 0 16 8 M 8 14 L 8 19 M 16 14 L 16 19 M 8 19 L 16 19'
+  else if N = 'close' then
+    APath.Data := 'M 6 6 L 18 18 M 18 6 L 6 18'
+  else if N = 'plus' then
+    APath.Data := 'M 12 5 L 12 19 M 5 12 L 19 12'
+  else
+  begin
+    AFill := True;
+    APath.Data := 'M 8 5 L 19 12 L 8 19 Z';
+  end;
+end;
+
+{ TTabVectorIcon }
+
+constructor TTabVectorIcon.Create(AOwner: TComponent);
+begin
+  inherited;
+  FIconColor := TAlphaColors.White;
+  FIconName := 'plus';
+  HitTest := False;
+end;
+
+procedure TTabVectorIcon.Paint;
+var
+  Path: TPathData;
+  R: TRectF;
+  FillIcon: Boolean;
+begin
+  inherited;
+  if (Width <= 0) or (Height <= 0) then Exit;
+  Path := TPathData.Create;
+  try
+    BuildTabIconPath(FIconName, Path, FillIcon);
+    R := LocalRect;
+    R.Inflate(-2, -2);
+    Path.FitToRect(R);
+    Canvas.Stroke.Kind := TBrushKind.Solid;
+    Canvas.Stroke.Color := FIconColor;
+    Canvas.Stroke.Thickness := 1.6;
+    Canvas.Fill.Kind := TBrushKind.Solid;
+    Canvas.Fill.Color := FIconColor;
+    if FillIcon then
+      Canvas.FillPath(Path, AbsoluteOpacity)
+    else
+      Canvas.DrawPath(Path, AbsoluteOpacity);
+  finally
+    Path.Free;
+  end;
+end;
+
+procedure TTabVectorIcon.SetIconColor(const AValue: TAlphaColor);
+begin
+  if FIconColor = AValue then Exit;
+  FIconColor := AValue;
+  Repaint;
+end;
+
+procedure TTabVectorIcon.SetIconName(const AValue: string);
+begin
+  if SameText(FIconName, AValue) then Exit;
+  FIconName := AValue;
+  Repaint;
+end;
+
 { TDockingTab }
 
 constructor TDockingTab.Create(AOwner: TnbDockingTabHost; const ACaption: string);
@@ -487,15 +562,11 @@ begin
   FCaptionEdit.OnKeyDown := HandleEditKeyDown;
 
   (* Glyph обозначает группу — drag в split-зону для таких табов отключён. *)
-  FGroupGlyph := TText.Create(Self);
+  FGroupGlyph := TTabVectorIcon.Create(Self);
   FGroupGlyph.Parent := Self;
   FGroupGlyph.Align := TAlignLayout.None;
   FGroupGlyph.Width := 0;
-  FGroupGlyph.Text := TAB_ICON_GROUP;
-  FGroupGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-  FGroupGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FGroupGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
-  FGroupGlyph.TextSettings.Font.Size := 14;
+  FGroupGlyph.IconName := 'group';
   FGroupGlyph.HitTest := False;
   FGroupGlyph.Visible := False;
 
@@ -512,14 +583,10 @@ begin
   FCloseBtn.OnMouseEnter := HandleCloseMouseEnter;
   FCloseBtn.OnMouseLeave := HandleCloseMouseLeave;
 
-  FCloseGlyph := TText.Create(Self);
+  FCloseGlyph := TTabVectorIcon.Create(Self);
   FCloseGlyph.Parent := FCloseBtn;
   FCloseGlyph.Align := TAlignLayout.Client;
-  FCloseGlyph.Text := TAB_ICON_CLOSE;
-  FCloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-  FCloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FCloseGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
-  FCloseGlyph.TextSettings.Font.Size := 12;
+  FCloseGlyph.IconName := 'close';
   FCloseGlyph.HitTest := False;
 
   OnMouseDown := HandleMouseDown;
@@ -792,9 +859,9 @@ begin
     FCaptionLabel.TextSettings.Font.Style := [TFontStyle.fsBold]
   else
     FCaptionLabel.TextSettings.Font.Style := [];
-  FCloseGlyph.TextSettings.FontColor := TextColor;
+  FCloseGlyph.IconColor := TextColor;
   if FGroupGlyph <> nil then
-    FGroupGlyph.TextSettings.FontColor := TextColor;
+    FGroupGlyph.IconColor := TextColor;
 end;
 
 procedure TTabButton.HandleMouseDown(Sender: TObject; Button: TMouseButton;
@@ -1093,17 +1160,13 @@ begin
   FActionButton.OnMouseEnter := HandleActionButtonMouseEnter;
   FActionButton.OnMouseLeave := HandleActionButtonMouseLeave;
 
-  FActionGlyph := TText.Create(Self);
+  FActionGlyph := TTabVectorIcon.Create(Self);
   FActionGlyph.Parent := FActionButton;
   FActionGlyph.Stored := False;
   FActionGlyph.Locked := True;
   FActionGlyph.Align := TAlignLayout.Client;
-  FActionGlyph.Text := FTabBarActionText;
-  FActionGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-  FActionGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FActionGlyph.TextSettings.Font.Size := 14;
-  FActionGlyph.TextSettings.Font.Style := [TFontStyle.fsBold];
-  FActionGlyph.TextSettings.FontColor := FTabTextColor;
+  FActionGlyph.IconName := FTabBarActionText;
+  FActionGlyph.IconColor := FTabTextColor;
   FActionGlyph.HitTest := False;
 
   FAddButton := TRectangle.Create(Self);
@@ -1123,17 +1186,13 @@ begin
   FAddButton.OnMouseEnter := HandleAddButtonMouseEnter;
   FAddButton.OnMouseLeave := HandleAddButtonMouseLeave;
 
-  FAddGlyph := TText.Create(Self);
+  FAddGlyph := TTabVectorIcon.Create(Self);
   FAddGlyph.Parent := FAddButton;
   FAddGlyph.Stored := False;
   FAddGlyph.Locked := True;
   FAddGlyph.Align := TAlignLayout.Client;
-  FAddGlyph.Text := TAB_ICON_ADD;
-  FAddGlyph.TextSettings.HorzAlign := TTextAlign.Center;
-  FAddGlyph.TextSettings.VertAlign := TTextAlign.Center;
-  FAddGlyph.TextSettings.Font.Family := TAB_ICON_FONT;
-  FAddGlyph.TextSettings.Font.Size := 15;
-  FAddGlyph.TextSettings.FontColor := FTabTextColor;
+  FAddGlyph.IconName := 'plus';
+  FAddGlyph.IconColor := FTabTextColor;
   FAddGlyph.HitTest := False;
 
   FDropIndicator := TRectangle.Create(Self);
@@ -1284,7 +1343,7 @@ begin
   if FTabBarActionText = AValue then Exit;
   FTabBarActionText := AValue;
   if FActionGlyph <> nil then
-    FActionGlyph.Text := FTabBarActionText;
+    FActionGlyph.IconName := FTabBarActionText;
 end;
 
 procedure TnbDockingTabHost.SetTabBarActionVisible(AValue: Boolean);
@@ -1329,9 +1388,9 @@ begin
   if FTabBarBg <> nil then
     FTabBarBg.Fill.Color := BarColor;
   if FAddGlyph <> nil then
-    FAddGlyph.TextSettings.FontColor := GlyphColor;
+    FAddGlyph.IconColor := GlyphColor;
   if FActionGlyph <> nil then
-    FActionGlyph.TextSettings.FontColor := GlyphColor;
+    FActionGlyph.IconColor := GlyphColor;
 end;
 
 procedure TnbDockingTabHost.ScheduleDeferredCloseTab(ATab: TDockingTab);

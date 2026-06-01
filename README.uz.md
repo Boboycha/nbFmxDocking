@@ -1,6 +1,6 @@
-# nbFMXDocking
+﻿# nbFMXDocking
 
-Tillar: [Русский](README.md) | [English](README.en.md) | [O'zbekcha](README.uz.md)
+Tillar: [Р СѓСЃСЃРєРёР№](README.md) | [English](README.en.md) | [O'zbekcha](README.uz.md)
 
 `nbFMXDocking` - Delphi FireMonkey uchun tabbed docking UI komponentlari
 to'plami. U tablar, split-panellar, pane sarlavhasini sudrab ko'chirish,
@@ -195,7 +195,7 @@ begin
   HeaderBgColor := $FF1C2330;
   HeaderTextColor := $FFE6EDF3;
 
-  AddHeaderAction('clear', 'MDL2:E74D', HandleClear, 'Clear log');
+  AddHeaderAction('clear', 'delete', HandleClear, 'Clear log');
   AddDefaultCloseAction;
 
   FMemo := TMemo.Create(Self);
@@ -332,7 +332,7 @@ Har bir action quyidagilardan iborat:
 Runtime misol:
 
 ```pascal
-AddHeaderAction('refresh', 'MDL2:E72C', HandleRefresh, 'Refresh');
+AddHeaderAction('refresh', 'refresh', HandleRefresh, 'Refresh');
 AddHeaderAction('theme', 'theme', HandleTheme, 'Theme');
 AddDefaultCloseAction;
 ```
@@ -351,12 +351,11 @@ chaqiring.
 | `broadcast`, `B` | broadcast |
 | `sftp`, `folder`, `S` | folder |
 | `theme`, `T` | theme |
-| `MDL2:E712` | aniq Segoe MDL2 Assets glyph |
 
-Object Inspector ichida `Glyph` uchun `...` tugmali editor bor. U MDL2
-symbol'larni vizual qidirish va tanlash imkonini beradi.
+Object Inspector ichida `Glyph` uchun `...` tugmali editor bor. U vector
+alias'larni vizual qidirish va tanlash imkonini beradi.
 
-`Glyph` alias yoki MDL2 code sifatida tanilmasa, oddiy text sifatida
+`Glyph` vector alias sifatida tanilmasa, oddiy text sifatida
 chiziladi.
 
 ## Muhim Property'lar

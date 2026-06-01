@@ -94,9 +94,24 @@ type
       read GetItem write SetItem; default;
   end;
 
+  TPaneHeaderVectorIcon = class(TControl)
+  private
+    FIconColor: TAlphaColor;
+    FIconName: string;
+    procedure SetIconColor(const AValue: TAlphaColor);
+    procedure SetIconName(const AValue: string);
+  protected
+    procedure Paint; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    property IconName: string read FIconName write SetIconName;
+    property IconColor: TAlphaColor read FIconColor write SetIconColor;
+  end;
+
   (* Кнопка action в rtHeader — styled FMX button с привязанным id. *)
   TPaneHeaderActionButton = class(TSpeedButton)
   private
+    FIcon: TPaneHeaderVectorIcon;
     FLocalBg: TAlphaColor;
     FLocalBorder: TAlphaColor;
     FLocalText: TAlphaColor;
@@ -104,9 +119,9 @@ type
     procedure PaintLocalChrome;
   public
     ActionId: string;
-    UsesIconFont: Boolean;
     constructor Create(AOwner: TComponent); override;
     procedure ApplyLocalChrome(ABg, ABorder, AText: TAlphaColor);
+    procedure SetIconName(const AValue: string);
   end;
 
   TnbDockingPaneContent = class(TRectangle)
@@ -285,113 +300,55 @@ const
   CARD_PADDING_BOTTOM = 0;    (* защита скруглённого нижнего угла *)
   STROKE_THICKNESS    = 1.0;
   DRAG_THRESHOLD      = 5;
-  {$IFDEF LINUX}
-  DOCK_ICON_FONT      = '';
-  DOCK_ICON_ADD       = '+';
-  DOCK_ICON_CANCEL    = 'x';
-  DOCK_ICON_BROADCAST = 'B';
-  DOCK_ICON_FOLDER    = 'S';
-  DOCK_ICON_THEME     = 'T';
-  {$ELSE}
-  DOCK_ICON_FONT      = 'Segoe MDL2 Assets';
-  DOCK_ICON_ADD       = #$E710;
-  DOCK_ICON_CANCEL    = #$E711;
-  DOCK_ICON_BROADCAST = #$E909;
-  DOCK_ICON_FOLDER    = #$E8B7;
-  DOCK_ICON_THEME     = #$E790;
-  {$ENDIF}
-
 type
   (* Cast-наследник для доступа к protected Capture/ReleaseCapture. *)
   TControlAccess = class(TControl);
 
-function HeaderActionGlyphFor(const AId, AGlyph: string;
-  out AUsesIconFont: Boolean): string;
+function HeaderActionIconFor(const AId, AGlyph: string): string;
 var
-  GlyphText, HexText: string;
-  Code, P: Integer;
+  GlyphText: string;
 begin
   GlyphText := Trim(AGlyph);
-  AUsesIconFont := True;
-
-  {$IFDEF LINUX}
-  AUsesIconFont := False;
   if SameText(AId, 'add') or SameText(AId, 'create') or
     SameText(GlyphText, 'add') or SameText(GlyphText, 'plus') or
     (GlyphText = '+') then
-    Exit(DOCK_ICON_ADD);
+    Exit('plus');
   if SameText(AId, 'close') or SameText(AId, 'cancel') or
     SameText(AId, 'delete') or SameText(GlyphText, 'close') or
     SameText(GlyphText, 'x') then
-    Exit(DOCK_ICON_CANCEL);
+    Exit('close');
   if SameText(AId, 'save') then
-    Exit('S');
+    Exit('save');
   if SameText(AId, 'copy') then
-    Exit('C');
+    Exit('copy');
   if SameText(AId, 'paste') then
-    Exit('P');
+    Exit('paste');
   if SameText(AId, 'import') then
-    Exit('I');
+    Exit('download');
   if SameText(AId, 'generate') then
-    Exit('G');
+    Exit('key');
   if SameText(AId, 'select') then
-    Exit('v');
+    Exit('select');
   if SameText(AId, 'back') then
-    Exit('<');
+    Exit('back');
   if SameText(AId, 'connect') or SameText(AId, 'run') then
-    Exit('>');
+    Exit('play');
   if SameText(AId, 'focus') then
-    Exit('[]');
+    Exit('focus');
   if SameText(AId, 'scripts') then
-    Exit('#');
+    Exit('scripts');
   if SameText(AId, 'broadcast') or SameText(GlyphText, 'broadcast') or
     SameText(GlyphText, 'B') then
-    Exit(DOCK_ICON_BROADCAST);
+    Exit('broadcast');
   if SameText(AId, 'sftp') or SameText(GlyphText, 'sftp') or
     SameText(GlyphText, 'folder') or SameText(GlyphText, 'S') then
-    Exit(DOCK_ICON_FOLDER);
+    Exit('folder');
   if SameText(AId, 'theme') or SameText(GlyphText, 'theme') or
     SameText(GlyphText, 'T') then
-    Exit(DOCK_ICON_THEME);
-  if Pos('MDL2:', UpperCase(GlyphText)) > 0 then
-    Exit('?');
-  if (Length(GlyphText) = 1) and
-    (Ord(GlyphText[1]) >= $E700) and (Ord(GlyphText[1]) <= $F8FF) then
-    Exit('?');
-  Exit(GlyphText);
-  {$ENDIF}
-
-  if SameText(AId, 'add') or SameText(GlyphText, 'add') or
-    SameText(GlyphText, 'plus') or (GlyphText = '+') then
-    Exit(DOCK_ICON_ADD);
-  if SameText(AId, 'close') or SameText(GlyphText, 'close') or
-    SameText(GlyphText, 'x') then
-    Exit(DOCK_ICON_CANCEL);
-  if SameText(AId, 'broadcast') or SameText(GlyphText, 'broadcast') or
-    SameText(GlyphText, 'B') then
-    Exit(DOCK_ICON_BROADCAST);
-  if SameText(AId, 'sftp') or SameText(GlyphText, 'sftp') or
-    SameText(GlyphText, 'folder') or SameText(GlyphText, 'S') then
-    Exit(DOCK_ICON_FOLDER);
-  if SameText(AId, 'theme') or SameText(GlyphText, 'theme') or
-    SameText(GlyphText, 'T') then
-    Exit(DOCK_ICON_THEME);
-
-  P := Pos('MDL2:', UpperCase(GlyphText));
-  if P > 0 then
-  begin
-    HexText := Copy(GlyphText, P + 5, 4);
-    if TryStrToInt('$' + HexText, Code) and
-      (Code >= $E700) and (Code <= $F8FF) then
-      Exit(Char(Code));
-  end;
-
-  if (Length(GlyphText) = 1) and
-    (Ord(GlyphText[1]) >= $E700) and (Ord(GlyphText[1]) <= $F8FF) then
-    Exit(GlyphText);
-
-  AUsesIconFont := False;
+    Exit('theme');
   Result := GlyphText;
+  if Result = '' then
+    Result := 'dot';
 end;
 
 function BlendColor(AColor1, AColor2: TAlphaColor;
@@ -407,6 +364,108 @@ begin
     (Round(((AColor1 shr 16) and $FF) * W1 + ((AColor2 shr 16) and $FF) * AWeight2) shl 16) or
     (Round(((AColor1 shr 8) and $FF) * W1 + ((AColor2 shr 8) and $FF) * AWeight2) shl 8) or
     Round((AColor1 and $FF) * W1 + (AColor2 and $FF) * AWeight2);
+end;
+
+procedure BuildDockIconPath(const AName: string; APath: TPathData;
+  out AFill: Boolean);
+var
+  N: string;
+begin
+  APath.Clear;
+  AFill := False;
+  N := LowerCase(Trim(AName));
+  if N = 'plus' then
+    APath.Data := 'M 12 5 L 12 19 M 5 12 L 19 12'
+  else if N = 'close' then
+    APath.Data := 'M 6 6 L 18 18 M 18 6 L 6 18'
+  else if N = 'save' then
+    APath.Data := 'M 5 4 L 17 4 L 19 6 L 19 20 L 5 20 Z M 8 4 L 8 10 L 16 10 L 16 4 M 8 16 L 16 16'
+  else if N = 'delete' then
+    APath.Data := 'M 7 8 L 17 8 M 10 8 L 10 20 M 14 8 L 14 20 M 8 8 L 9 21 L 15 21 L 16 8 M 10 5 L 14 5 L 15 8'
+  else if N = 'copy' then
+    APath.Data := 'M 8 8 L 18 8 L 18 20 L 8 20 Z M 5 5 L 15 5 L 15 8'
+  else if N = 'paste' then
+    APath.Data := 'M 8 6 L 16 6 L 16 9 L 8 9 Z M 6 8 L 18 8 L 18 21 L 6 21 Z'
+  else if N = 'download' then
+    APath.Data := 'M 12 5 L 12 18 M 6 12 L 12 18 L 18 12 M 5 20 L 19 20'
+  else if N = 'play' then
+  begin
+    AFill := True;
+    APath.Data := 'M 8 5 L 19 12 L 8 19 Z';
+  end
+  else if N = 'back' then
+    APath.Data := 'M 18 6 L 10 12 L 18 18 M 10 12 L 22 12'
+  else if N = 'key' then
+    APath.Data := 'M 8 8 C 6 8 5 9 5 11 C 5 13 6 14 8 14 C 10 14 11 13 11 11 C 11 9 10 8 8 8 Z M 11 11 L 20 11 M 17 11 L 17 14 M 20 11 L 20 13'
+  else if N = 'select' then
+    APath.Data := 'M 5 13 L 10 18 L 20 7'
+  else if N = 'broadcast' then
+    APath.Data := 'M 5 12 A 7 7 0 0 1 19 12 M 8 12 A 4 4 0 0 1 16 12 M 12 12 L 12 18'
+  else if N = 'folder' then
+    APath.Data := 'M 4 7 L 10 7 L 12 9 L 20 9 L 20 19 L 4 19 Z'
+  else if N = 'theme' then
+    APath.Data := 'M 12 4 A 8 8 0 1 0 12 20 A 3 3 0 0 1 12 14 L 14 14 A 2 2 0 0 0 14 10 L 12 10 Z'
+  else if N = 'focus' then
+    APath.Data := 'M 5 10 L 5 5 L 10 5 M 14 5 L 19 5 L 19 10 M 19 14 L 19 19 L 14 19 M 10 19 L 5 19 L 5 14'
+  else if N = 'scripts' then
+    APath.Data := 'M 8 7 L 4 12 L 8 17 M 16 7 L 20 12 L 16 17 M 13 6 L 11 18'
+  else
+  begin
+    AFill := True;
+    APath.Data := 'M 12 10 A 2 2 0 1 0 12 14 A 2 2 0 1 0 12 10';
+  end;
+end;
+
+{ TPaneHeaderVectorIcon }
+
+constructor TPaneHeaderVectorIcon.Create(AOwner: TComponent);
+begin
+  inherited;
+  FIconColor := TAlphaColors.White;
+  FIconName := 'dot';
+  HitTest := False;
+end;
+
+procedure TPaneHeaderVectorIcon.Paint;
+var
+  Path: TPathData;
+  R: TRectF;
+  FillIcon: Boolean;
+begin
+  inherited;
+  if (Width <= 0) or (Height <= 0) then Exit;
+  Path := TPathData.Create;
+  try
+    BuildDockIconPath(FIconName, Path, FillIcon);
+    R := LocalRect;
+    R.Inflate(-2, -2);
+    Path.FitToRect(R);
+    Canvas.Stroke.Kind := TBrushKind.Solid;
+    Canvas.Stroke.Color := FIconColor;
+    Canvas.Stroke.Thickness := 1.6;
+    Canvas.Fill.Kind := TBrushKind.Solid;
+    Canvas.Fill.Color := FIconColor;
+    if FillIcon then
+      Canvas.FillPath(Path, AbsoluteOpacity)
+    else
+      Canvas.DrawPath(Path, AbsoluteOpacity);
+  finally
+    Path.Free;
+  end;
+end;
+
+procedure TPaneHeaderVectorIcon.SetIconColor(const AValue: TAlphaColor);
+begin
+  if FIconColor = AValue then Exit;
+  FIconColor := AValue;
+  Repaint;
+end;
+
+procedure TPaneHeaderVectorIcon.SetIconName(const AValue: string);
+begin
+  if SameText(FIconName, AValue) then Exit;
+  FIconName := AValue;
+  Repaint;
 end;
 
 { TDockingPaneHeaderAction }
@@ -496,6 +555,13 @@ begin
   FLocalBg := TAlphaColor($FF2A2A2A);
   FLocalBorder := TAlphaColor($40E0E0E0);
   FLocalText := TAlphaColor($FFE0E0E0);
+  Text := '';
+  FIcon := TPaneHeaderVectorIcon.Create(Self);
+  FIcon.Parent := Self;
+  FIcon.Align := TAlignLayout.Client;
+  FIcon.Margins.Rect := RectF(6, 6, 6, 6);
+  FIcon.IconColor := FLocalText;
+  FIcon.HitTest := False;
   OnApplyStyleLookup := HandleApplyStyleLookup;
 end;
 
@@ -508,8 +574,6 @@ procedure TPaneHeaderActionButton.PaintLocalChrome;
 var
   Obj: TFmxObject;
   Shape: TShape;
-  Txt: TTextControl;
-  BtnTxt: TButtonStyleTextObject;
 
   procedure PaintShape(const AName: string);
   begin
@@ -524,65 +588,15 @@ var
     end;
   end;
 
-  procedure PaintTextResource;
-  begin
-    Obj := FindStyleResource('text');
-    if Obj is TButtonStyleTextObject then
-    begin
-      BtnTxt := TButtonStyleTextObject(Obj);
-      BtnTxt.NormalColor := FLocalText;
-      BtnTxt.HotColor := FLocalText;
-      BtnTxt.FocusedColor := FLocalText;
-      BtnTxt.PressedColor := FLocalText;
-      if UsesIconFont then
-      begin
-        BtnTxt.TextSettings.Font.Family := DOCK_ICON_FONT;
-        BtnTxt.TextSettings.Font.Size := 13;
-      end
-      else
-      begin
-        BtnTxt.TextSettings.Font.Family := '';
-        BtnTxt.TextSettings.Font.Size := 12;
-      end;
-      BtnTxt.TextSettings.FontColor := FLocalText;
-      BtnTxt.TextSettings.HorzAlign := TTextAlign.Center;
-      BtnTxt.TextSettings.VertAlign := TTextAlign.Center;
-      BtnTxt.TextSettings.Trimming := TTextTrimming.None;
-    end
-    else if Obj is TTextControl then
-    begin
-      Txt := TTextControl(Obj);
-      Txt.StyledSettings := Txt.StyledSettings - [TStyledSetting.FontColor,
-        TStyledSetting.Family, TStyledSetting.Size];
-      if UsesIconFont then
-      begin
-        Txt.TextSettings.Font.Family := DOCK_ICON_FONT;
-        Txt.TextSettings.Font.Size := 13;
-      end
-      else
-      begin
-        Txt.TextSettings.Font.Family := '';
-        Txt.TextSettings.Font.Size := 12;
-      end;
-      Txt.TextSettings.FontColor := FLocalText;
-      Txt.TextSettings.HorzAlign := TTextAlign.Center;
-      Txt.TextSettings.VertAlign := TTextAlign.Center;
-      Txt.TextSettings.Trimming := TTextTrimming.None;
-    end;
-  end;
-
 begin
   StyledSettings := StyledSettings - [TStyledSetting.FontColor,
     TStyledSetting.Family, TStyledSetting.Size];
-  if UsesIconFont then
-  begin
-    TextSettings.Font.Family := DOCK_ICON_FONT;
-    TextSettings.Font.Size := 13;
-  end;
+  Text := '';
   TextSettings.FontColor := FLocalText;
+  if FIcon <> nil then
+    FIcon.IconColor := FLocalText;
   PaintShape('background');
   PaintShape('bg');
-  PaintTextResource;
 end;
 
 procedure TPaneHeaderActionButton.ApplyLocalChrome(ABg, ABorder,
@@ -593,6 +607,13 @@ begin
   FLocalText := AText;
   ApplyStyleLookup;
   PaintLocalChrome;
+end;
+
+procedure TPaneHeaderActionButton.SetIconName(const AValue: string);
+begin
+  Text := '';
+  if FIcon <> nil then
+    FIcon.IconName := AValue;
 end;
 
 { TnbDockingPaneContent }
@@ -733,13 +754,8 @@ begin
   begin
     Btn := FActionButtons[I];
     Btn.StyleLookup := ScopedHeaderActionStyle('speedbuttonstyle');
-    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
-      TStyledSetting.Family, TStyledSetting.Size];
-    if Btn.UsesIconFont then
-      Btn.TextSettings.Font.Family := DOCK_ICON_FONT
-    else
-      Btn.TextSettings.Font.Family := '';
-    Btn.TextSettings.FontColor := FHeaderTextColor;
+    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor];
+    Btn.SetIconName(HeaderActionIconFor(Btn.ActionId, Btn.Text));
     Btn.ApplyLocalChrome(FHeaderBgColor,
       BlendColor(FHeaderBgColor, FHeaderTextColor, 0.22),
       FHeaderTextColor);
@@ -1140,7 +1156,6 @@ var
   I: Integer;
   Action: TDockingPaneHeaderAction;
   Btn: TPaneHeaderActionButton;
-  UsesIconFont: Boolean;
 begin
   if FActionsBar = nil then Exit;
 
@@ -1160,22 +1175,10 @@ begin
     Btn.Height := HEADER_HEIGHT - 7;
     Btn.Margins.Rect := RectF(0, 3, 4, 3);
     Btn.StyleLookup := ScopedHeaderActionStyle('speedbuttonstyle');
-    Btn.Text := HeaderActionGlyphFor(Action.Id, Action.Glyph, UsesIconFont);
-    Btn.UsesIconFont := UsesIconFont;
-    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor,
-      TStyledSetting.Family, TStyledSetting.Size];
+    Btn.SetIconName(HeaderActionIconFor(Action.Id, Action.Glyph));
+    Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor];
     Btn.TextSettings.HorzAlign := TTextAlign.Center;
     Btn.TextSettings.VertAlign := TTextAlign.Center;
-    if UsesIconFont then
-    begin
-      Btn.TextSettings.Font.Family := DOCK_ICON_FONT;
-      Btn.TextSettings.Font.Size := 13;
-    end
-    else
-    begin
-      Btn.TextSettings.Font.Family := '';
-      Btn.TextSettings.Font.Size := 12;
-    end;
     Btn.TextSettings.FontColor := FHeaderTextColor;
     Btn.TextSettings.Trimming := TTextTrimming.None;
     Btn.ApplyLocalChrome(FHeaderBgColor,
