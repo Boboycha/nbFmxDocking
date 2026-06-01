@@ -526,3 +526,8 @@ demo/
 1. `nbDocking.Shell` — layout из нескольких зон: sidebar, main, bottom.
 2. `nbDocking.FloatWindow` — отстыковка pane в отдельную форму.
 3. `nbDocking.Persistence` — сохранение/восстановление layout'а.
+
+## Документация проекта
+
+- [Отчет о разработке](docs/DEVELOPMENT_REPORT.md)
+- [Руководство разработчика](docs/DEVELOPER_GUIDE.md)

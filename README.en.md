@@ -530,3 +530,8 @@ Planned next layers:
 2. `nbDocking.FloatWindow` - undock a pane into a separate form.
 3. `nbDocking.Persistence` - save and restore layouts.
 
+## Project Documentation
+
+- [Development Report](docs/DEVELOPMENT_REPORT.md)
+- [Developer Guide](docs/DEVELOPER_GUIDE.md)
+

@@ -531,3 +531,8 @@ Keyingi rejalashtirilgan qatlamlar:
 1. `nbDocking.Shell` - ko'p zonali layout: sidebar, main, bottom.
 2. `nbDocking.FloatWindow` - pane'ni alohida formaga ajratish.
 3. `nbDocking.Persistence` - layout'larni saqlash va tiklash.
+
+## Loyiha hujjatlari
+
+- [Development Report](docs/DEVELOPMENT_REPORT.md)
+- [Developer Guide](docs/DEVELOPER_GUIDE.md)
