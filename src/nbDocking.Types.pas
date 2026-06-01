@@ -285,12 +285,21 @@ const
   CARD_PADDING_BOTTOM = 0;    (* защита скруглённого нижнего угла *)
   STROKE_THICKNESS    = 1.0;
   DRAG_THRESHOLD      = 5;
+  {$IFDEF LINUX}
+  DOCK_ICON_FONT      = '';
+  DOCK_ICON_ADD       = '+';
+  DOCK_ICON_CANCEL    = 'x';
+  DOCK_ICON_BROADCAST = 'B';
+  DOCK_ICON_FOLDER    = 'S';
+  DOCK_ICON_THEME     = 'T';
+  {$ELSE}
   DOCK_ICON_FONT      = 'Segoe MDL2 Assets';
   DOCK_ICON_ADD       = #$E710;
   DOCK_ICON_CANCEL    = #$E711;
   DOCK_ICON_BROADCAST = #$E909;
   DOCK_ICON_FOLDER    = #$E8B7;
   DOCK_ICON_THEME     = #$E790;
+  {$ENDIF}
 
 type
   (* Cast-наследник для доступа к protected Capture/ReleaseCapture. *)
@@ -304,6 +313,53 @@ var
 begin
   GlyphText := Trim(AGlyph);
   AUsesIconFont := True;
+
+  {$IFDEF LINUX}
+  AUsesIconFont := False;
+  if SameText(AId, 'add') or SameText(AId, 'create') or
+    SameText(GlyphText, 'add') or SameText(GlyphText, 'plus') or
+    (GlyphText = '+') then
+    Exit(DOCK_ICON_ADD);
+  if SameText(AId, 'close') or SameText(AId, 'cancel') or
+    SameText(AId, 'delete') or SameText(GlyphText, 'close') or
+    SameText(GlyphText, 'x') then
+    Exit(DOCK_ICON_CANCEL);
+  if SameText(AId, 'save') then
+    Exit('S');
+  if SameText(AId, 'copy') then
+    Exit('C');
+  if SameText(AId, 'paste') then
+    Exit('P');
+  if SameText(AId, 'import') then
+    Exit('I');
+  if SameText(AId, 'generate') then
+    Exit('G');
+  if SameText(AId, 'select') then
+    Exit('v');
+  if SameText(AId, 'back') then
+    Exit('<');
+  if SameText(AId, 'connect') or SameText(AId, 'run') then
+    Exit('>');
+  if SameText(AId, 'focus') then
+    Exit('[]');
+  if SameText(AId, 'scripts') then
+    Exit('#');
+  if SameText(AId, 'broadcast') or SameText(GlyphText, 'broadcast') or
+    SameText(GlyphText, 'B') then
+    Exit(DOCK_ICON_BROADCAST);
+  if SameText(AId, 'sftp') or SameText(GlyphText, 'sftp') or
+    SameText(GlyphText, 'folder') or SameText(GlyphText, 'S') then
+    Exit(DOCK_ICON_FOLDER);
+  if SameText(AId, 'theme') or SameText(GlyphText, 'theme') or
+    SameText(GlyphText, 'T') then
+    Exit(DOCK_ICON_THEME);
+  if Pos('MDL2:', UpperCase(GlyphText)) > 0 then
+    Exit('?');
+  if (Length(GlyphText) = 1) and
+    (Ord(GlyphText[1]) >= $E700) and (Ord(GlyphText[1]) <= $F8FF) then
+    Exit('?');
+  Exit(GlyphText);
+  {$ENDIF}
 
   if SameText(AId, 'add') or SameText(GlyphText, 'add') or
     SameText(GlyphText, 'plus') or (GlyphText = '+') then
@@ -988,12 +1044,19 @@ end;
 procedure TnbDockingPaneContent.HandleActionClick(Sender: TObject);
 var
   Btn: TPaneHeaderActionButton;
+  ActionId: string;
 begin
   if FEditingTitle then Exit;
   if not (Sender is TPaneHeaderActionButton) then Exit;
   Btn := TPaneHeaderActionButton(Sender);
+  ActionId := Btn.ActionId;
   RequestActivate;
-  ExecuteHeaderAction(Btn.ActionId);
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      if not (csDestroying in ComponentState) then
+        ExecuteHeaderAction(ActionId);
+    end);
 end;
 
 procedure TnbDockingPaneContent.HandleCloseAction(

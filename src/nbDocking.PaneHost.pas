@@ -1078,7 +1078,7 @@ begin
 
   (* Free контента откладываем: мы внутри стека OnClick кнопки "x",
      которая является потомком ToCloseContent. Синхронный Free убьёт
-     кнопку, FMX вернётся в TButton.Click → AV. *)
+     кнопку, FMX вернётся в TSpeedButton.Click → AV. *)
   if ToCloseContent <> nil then
     TThread.ForceQueue(nil,
       procedure

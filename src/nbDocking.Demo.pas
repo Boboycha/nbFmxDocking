@@ -19,11 +19,11 @@ type
     FFillColor: TAlphaColor;
     FBg: TRectangle;
     FNumberLabel: TLabel;
-    FBtnSplitLeft: TButton;
-    FBtnSplitUp: TButton;
-    FBtnSplitDown: TButton;
-    FBtnSplitRight: TButton;
-    FBtnClose: TButton;
+    FBtnSplitLeft: TSpeedButton;
+    FBtnSplitUp: TSpeedButton;
+    FBtnSplitDown: TSpeedButton;
+    FBtnSplitRight: TSpeedButton;
+    FBtnClose: TSpeedButton;
     procedure BuildUI;
     procedure HandleBgMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -126,7 +126,7 @@ begin
   BtnRow.Margins.Top := 12;
   BtnRow.HitTest := False;
 
-  FBtnSplitLeft := TButton.Create(Self);
+  FBtnSplitLeft := TSpeedButton.Create(Self);
   FBtnSplitLeft.Parent := BtnRow;
   FBtnSplitLeft.Align := TAlignLayout.Left;
   FBtnSplitLeft.Width := 60;
@@ -135,7 +135,7 @@ begin
   FBtnSplitLeft.Hint := 'Split to the left';
   FBtnSplitLeft.OnClick := HandleSplitLeftClick;
 
-  FBtnSplitUp := TButton.Create(Self);
+  FBtnSplitUp := TSpeedButton.Create(Self);
   FBtnSplitUp.Parent := BtnRow;
   FBtnSplitUp.Align := TAlignLayout.Left;
   FBtnSplitUp.Width := 60;
@@ -144,7 +144,7 @@ begin
   FBtnSplitUp.Hint := 'Split above';
   FBtnSplitUp.OnClick := HandleSplitUpClick;
 
-  FBtnSplitDown := TButton.Create(Self);
+  FBtnSplitDown := TSpeedButton.Create(Self);
   FBtnSplitDown.Parent := BtnRow;
   FBtnSplitDown.Align := TAlignLayout.Left;
   FBtnSplitDown.Width := 60;
@@ -153,7 +153,7 @@ begin
   FBtnSplitDown.Hint := 'Split below';
   FBtnSplitDown.OnClick := HandleSplitDownClick;
 
-  FBtnSplitRight := TButton.Create(Self);
+  FBtnSplitRight := TSpeedButton.Create(Self);
   FBtnSplitRight.Parent := BtnRow;
   FBtnSplitRight.Align := TAlignLayout.Left;
   FBtnSplitRight.Width := 60;
@@ -162,7 +162,7 @@ begin
   FBtnSplitRight.Hint := 'Split to the right';
   FBtnSplitRight.OnClick := HandleSplitRightClick;
 
-  FBtnClose := TButton.Create(Self);
+  FBtnClose := TSpeedButton.Create(Self);
   FBtnClose.Parent := BtnRow;
   FBtnClose.Align := TAlignLayout.Left;
   FBtnClose.Width := 60;

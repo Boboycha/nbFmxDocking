@@ -32,10 +32,17 @@ const
   TAB_GROUP_CAPTION           = 'Group';
   TAB_BUTTON_HOVER_BLEND      = 0.22;
   TAB_BUTTON_STROKE_BLEND     = 0.84;
+  {$IFDEF LINUX}
+  TAB_ICON_FONT               = '';
+  TAB_ICON_GROUP              = '*';
+  TAB_ICON_CLOSE              = 'x';
+  TAB_ICON_ADD                = '+';
+  {$ELSE}
   TAB_ICON_FONT               = 'Segoe MDL2 Assets';
   TAB_ICON_GROUP              = #$E902;
   TAB_ICON_CLOSE              = #$E711;
   TAB_ICON_ADD                = #$E710;
+  {$ENDIF}
 
 type
   TnbDockingTabHost = class;
@@ -1856,7 +1863,12 @@ end;
 
 procedure TnbDockingTabHost.TabButton_RequestClose(ATab: TDockingTab);
 begin
-  CloseTab(ATab);
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      if (not (csDestroying in ComponentState)) and (FTabs.IndexOf(ATab) >= 0) then
+        CloseTab(ATab);
+    end);
 end;
 
 procedure TnbDockingTabHost.TabButton_StartDrag(AButton: TTabButton);

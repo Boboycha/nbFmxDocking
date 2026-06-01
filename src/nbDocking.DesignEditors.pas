@@ -13,6 +13,7 @@ uses
   FMX.Types, FMX.Controls,
   FMX.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics,
+  Vcl.Buttons,
   DesignIntf, DesignEditors,
   nbDocking.Types,
   nbDocking.PaneHost;
@@ -51,6 +52,8 @@ type
     procedure HandleListDblClick(Sender: TObject);
     procedure HandleListDrawItem(Control: TWinControl; Index: Integer;
       Rect: TRect; State: TOwnerDrawState);
+    procedure HandleOkClick(Sender: TObject);
+    procedure HandleCancelClick(Sender: TObject);
     procedure SelectValue(const AValue: string);
   public
     constructor CreatePicker(AOwner: TComponent);
@@ -536,7 +539,7 @@ end;
 constructor TMdl2GlyphPicker.CreatePicker(AOwner: TComponent);
 var
   ButtonsPanel: TPanel;
-  OkButton, CancelButton: TButton;
+  OkButton, CancelButton: TSpeedButton;
 begin
   inherited CreateNew(AOwner);
 
@@ -566,21 +569,19 @@ begin
   ButtonsPanel.Height := 48;
   ButtonsPanel.BevelOuter := bvNone;
 
-  OkButton := TButton.Create(Self);
+  OkButton := TSpeedButton.Create(Self);
   OkButton.Parent := ButtonsPanel;
   OkButton.Caption := 'OK';
-  OkButton.ModalResult := mrOk;
-  OkButton.Default := True;
   OkButton.SetBounds(ClientWidth - 178, 10, 76, 28);
   OkButton.Anchors := [akTop, akRight];
+  OkButton.OnClick := HandleOkClick;
 
-  CancelButton := TButton.Create(Self);
+  CancelButton := TSpeedButton.Create(Self);
   CancelButton.Parent := ButtonsPanel;
   CancelButton.Caption := 'Cancel';
-  CancelButton.ModalResult := mrCancel;
-  CancelButton.Cancel := True;
   CancelButton.SetBounds(ClientWidth - 94, 10, 76, 28);
   CancelButton.Anchors := [akTop, akRight];
+  CancelButton.OnClick := HandleCancelClick;
 
   FListBox := TListBox.Create(Self);
   FListBox.Parent := Self;
@@ -645,6 +646,16 @@ procedure TMdl2GlyphPicker.HandleListDblClick(Sender: TObject);
 begin
   if CurrentValue <> '' then
     ModalResult := mrOk;
+end;
+
+procedure TMdl2GlyphPicker.HandleOkClick(Sender: TObject);
+begin
+  ModalResult := mrOk;
+end;
+
+procedure TMdl2GlyphPicker.HandleCancelClick(Sender: TObject);
+begin
+  ModalResult := mrCancel;
 end;
 
 procedure TMdl2GlyphPicker.HandleListDrawItem(Control: TWinControl;
