@@ -21,7 +21,9 @@ dcu/
 *.delphilsp.json
 *.stat
 *._@emb_.tmp
-__history/
+*.pas.tmp.*
+__*/
+**/__*/
 ModelSupport_*/
 
 # OS/editor local state

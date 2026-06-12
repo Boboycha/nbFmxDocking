@@ -249,6 +249,11 @@ type
     procedure PaneHeader_End(const AScreenPt: TPointF);
     procedure PaneHeader_ShowTabBarHint;
     procedure PaneHeader_HideTabBarHint;
+    (* Общие хелперы drag-drop: пересоздание и безопасное скрытие overlay,
+       плюс поиск tab-кнопки под курсором для spring-loaded переключения. *)
+    procedure EnsureDropOverlay;
+    procedure HideAndDetachOverlay;
+    function TabButtonAt(const AScreenPt: TPointF): TDockingTab;
     procedure SetTabBarColor(AValue: TAlphaColor);
     procedure SetTabActiveColor(AValue: TAlphaColor);
     procedure SetTabInactiveColor(AValue: TAlphaColor);
@@ -1986,19 +1991,14 @@ begin
   FCurrentDropTarget := Target;
   FCurrentDropLeaf := nil;
 
-  (* Пересоздаём overlay — переиспользование оставляет за собой
-     висящие Parent/Visible после прошлых drag-ов. *)
-  if FDropOverlay <> nil then
-  begin
-    FDropOverlay.Parent := nil;
-    FDropOverlay.Free;
-    FDropOverlay := nil;
-  end;
-  FDropOverlay := TDockingDropOverlay.Create(Self);
+  EnsureDropOverlay;
 
   if Target <> nil then
   begin
     TargetPaneHost := Target.PaneHost;
+    if TargetPaneHost = nil then
+      Exit;
+
     FDropOverlay.Parent := TargetPaneHost;
     (* Drop на источник = no-op, оверлей не показываем. *)
     if Target <> Cur then
@@ -2008,8 +2008,7 @@ end;
 
 procedure TnbDockingTabHost.TabButton_LeavePaneDrag(AButton: TTabButton);
 begin
-  FDropOverlay.HideOverlay;
-  FDropOverlay.Parent := nil;
+  HideAndDetachOverlay;
   FCurrentDropTarget := nil;
   FCurrentDropLeaf := nil;
   Cursor := crDefault;
@@ -2024,6 +2023,8 @@ var
   LeafBnds: TRectF;
   Hit: TDropHitResult;
 begin
+  if FDropOverlay = nil then Exit;
+
   TargetTab := FindDropTargetTab(AScreenPt, PaneLocalPt);
 
   if TargetTab = nil then
@@ -2071,12 +2072,11 @@ begin
   if TargetTab <> nil then
   begin
     TargetLeaf := TargetTab.PaneHost.FindLeafAt(PaneLocalPt);
-    if TargetLeaf <> nil then
+    if (TargetLeaf <> nil) and (FDropOverlay <> nil) then
       Hit := FDropOverlay.HitTestZone(PaneLocalPt.X, PaneLocalPt.Y);
   end;
 
-  FDropOverlay.HideOverlay;
-  FDropOverlay.Parent := nil;
+  HideAndDetachOverlay;
   FCurrentDropTarget := nil;
   FCurrentDropLeaf := nil;
   Cursor := crDefault;
@@ -2129,6 +2129,47 @@ begin
   ATargetTab.PaneHost.SplitActive(ADir, Content);
 end;
 
+procedure TnbDockingTabHost.EnsureDropOverlay;
+begin
+  (* Пересоздаём overlay — переиспользование оставляет за собой
+     висящие Parent/Visible после прошлых drag-ов. *)
+  if FDropOverlay <> nil then
+  begin
+    FDropOverlay.Parent := nil;
+    FDropOverlay.Free;
+    FDropOverlay := nil;
+  end;
+  FDropOverlay := TDockingDropOverlay.Create(Self);
+end;
+
+procedure TnbDockingTabHost.HideAndDetachOverlay;
+begin
+  (* nil-safe: вызывается из обоих drag-потоков, в т.ч. при раннем выходе. *)
+  if FDropOverlay = nil then Exit;
+  FDropOverlay.HideOverlay;
+  FDropOverlay.Parent := nil;
+end;
+
+function TnbDockingTabHost.TabButtonAt(const AScreenPt: TPointF): TDockingTab;
+var
+  I: Integer;
+  Btn: TTabButton;
+  LocalPt: TPointF;
+begin
+  Result := nil;
+  for I := 0 to FTabs.Count - 1 do
+  begin
+    Btn := FTabs[I].FButton;
+    if Btn = nil then Continue;
+    if (not Btn.Visible) or (Btn.Parent = nil) then Continue;
+
+    LocalPt := Btn.ScreenToLocal(AScreenPt);
+    if (LocalPt.X >= 0) and (LocalPt.X <= Btn.Width)
+       and (LocalPt.Y >= 0) and (LocalPt.Y <= Btn.Height) then
+      Exit(FTabs[I]);
+  end;
+end;
+
 procedure TnbDockingTabHost.HandlePaneHostHeaderDrag(ASender: TnbDockingPaneHost;
   ALeaf: TPaneLeaf; APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
 begin
@@ -2147,14 +2188,7 @@ begin
   FHeaderDragOverTabBar := False;
   Cursor := crDrag;
 
-  (* См. комментарий в TabButton_EnterPaneDrag — пересоздаём overlay. *)
-  if FDropOverlay <> nil then
-  begin
-    FDropOverlay.Parent := nil;
-    FDropOverlay.Free;
-    FDropOverlay := nil;
-  end;
-  FDropOverlay := TDockingDropOverlay.Create(Self);
+  EnsureDropOverlay;
   FCurrentDropTarget := nil;
   FCurrentDropLeaf := nil;
 end;
@@ -2165,10 +2199,12 @@ var
   IsOverTabBar: Boolean;
   TargetTab: TDockingTab;
   TargetLeaf: TPaneLeaf;
+  SpringTab: TDockingTab;
   LeafBnds: TRectF;
   Hit: TDropHitResult;
 begin
   if FHeaderDragSourceLeaf = nil then Exit;
+  if FDropOverlay = nil then Exit;
 
   HostPt := ScreenToLocal(AScreenPt);
   IsOverTabBar := (HostPt.Y >= 0) and (HostPt.Y <= TAB_BAR_HEIGHT)
@@ -2184,6 +2220,13 @@ begin
       FHeaderDragOverTabBar := True;
       PaneHeader_ShowTabBarHint;
     end;
+    (* Spring-loaded переключение: наведение на кнопку другой вкладки
+       во время drag активирует её, открывая доступ к её pane для
+       кросс-табового дропа. Бросок над пустой частью бара по-прежнему
+       создаёт новую вкладку (см. PaneHeader_End). *)
+    SpringTab := TabButtonAt(AScreenPt);
+    if (SpringTab <> nil) and (SpringTab <> FActiveTab) then
+      InternalActivateTab(SpringTab);
     Exit;
   end;
 
@@ -2254,14 +2297,13 @@ begin
     TargetTab := FActiveTab;
     PaneLocalPt := TargetTab.PaneHost.ScreenToLocal(AScreenPt);
     TargetLeaf := TargetTab.PaneHost.FindLeafAt(PaneLocalPt);
-    if TargetLeaf <> nil then
+    if (TargetLeaf <> nil) and (FDropOverlay <> nil) then
       Hit := FDropOverlay.HitTestZone(PaneLocalPt.X, PaneLocalPt.Y);
   end;
 
   (* Очистка визуала до мутаций деревьев — иначе overlay
      зацепится за исчезающие layout-ы и AV. *)
-  FDropOverlay.HideOverlay;
-  FDropOverlay.Parent := nil;
+  HideAndDetachOverlay;
   FCurrentDropTarget := nil;
   FCurrentDropLeaf := nil;
   PaneHeader_HideTabBarHint;
