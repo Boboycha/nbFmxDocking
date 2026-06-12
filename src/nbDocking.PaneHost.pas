@@ -15,6 +15,7 @@ uses
   System.Generics.Collections,
   System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Objects,
+  FMX.Dialogs,
   FMX.Graphics,
   nbDocking.Types, nbDocking.PaneTree, nbDocking.DropOverlay;
 
@@ -22,6 +23,7 @@ const
   PANE_TAB_BAR_HEIGHT = 44;
   PANE_TAB_ADD_BUTTON_WIDTH = 34;
   PANE_TAB_DRAG_THRESHOLD = 5;
+  PANE_ROOT_DROP_EDGE_SIZE = 32;
   {$IFDEF LINUX}
   PANE_TAB_ICON_FONT = '';
   PANE_TAB_ICON_ADD = '+';
@@ -58,6 +60,7 @@ type
   TPaneHostTab = class
   public
     Caption: string;
+    CustomCaption: Boolean;
     Tree: TPaneTree;
     ActiveLeaf: TPaneLeaf;
     constructor Create(const ACaption: string);
@@ -107,12 +110,14 @@ type
     FDragSourceLeaf: TPaneLeaf;
     FCurrentDropLeaf: TPaneLeaf;
     FCurrentDropHit: TDropHitResult;
+    FCurrentDropIsRoot: Boolean;
     FTabDragIndex: Integer;
     FTabDragStartX: Single;
     FTabDragStartY: Single;
     FTabDragActive: Boolean;
     FTabDragTargetLeaf: TPaneLeaf;
     FTabDragHit: TDropHitResult;
+    FTabDragTargetIsRoot: Boolean;
     FOnContentNeeded: TContentFactoryEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
@@ -133,13 +138,21 @@ type
     procedure ClearDropOverlay;
     function IsPointOverTabBar(const AScreenPt: TPointF): Boolean;
     procedure SetTabBarDropHighlight(AValue: Boolean);
+    function RootBounds: TRectF;
+    function TryShowRootDrop(const ALocalPt: TPointF;
+      out AHit: TDropHitResult): Boolean;
+    function IsEmptyTab(ATab: TPaneHostTab): Boolean;
+    function NextPaneCaption: string;
+    function NextGroupCaption: string;
     function CreateDefaultContent: TnbDockingPaneContent;
     procedure EnsurePrimaryTab;
     procedure SaveActiveTabState;
     function AddTabWithContent(const ACaption: string;
       AContent: TnbDockingPaneContent): Integer;
     function CaptionForTab(ATab: TPaneHostTab; const AFallback: string): string;
+    procedure UpdateTabCaptionFromTree(ATab: TPaneHostTab);
     procedure ActivateTabIndex(AIndex: Integer);
+    procedure RemoveActiveTabIfEmpty;
     procedure UpdateTabButtonStates;
     procedure RebuildTabButtons;
     procedure HandleTabButtonMouseDown(Sender: TObject; Button: TMouseButton;
@@ -148,9 +161,12 @@ type
       X, Y: Single);
     procedure HandleTabButtonMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
+    procedure HandleTabButtonDblClick(Sender: TObject);
     procedure UpdateTabDrag(const AScreenPt: TPointF);
     procedure FinishTabDrag(const AScreenPt: TPointF);
     procedure CancelTabDrag;
+    function SplitRoot(ADirection: TSplitDirection;
+      ANewContent: TnbDockingPaneContent): TPaneLeaf;
     procedure HandleAddButtonClick(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleAddButtonMouseEnter(Sender: TObject);
@@ -306,6 +322,7 @@ constructor TPaneHostTab.Create(const ACaption: string);
 begin
   inherited Create;
   Caption := ACaption;
+  CustomCaption := False;
   Tree := TPaneTree.Create;
   ActiveLeaf := nil;
 end;
@@ -403,12 +420,14 @@ begin
   FDragSourceLeaf := nil;
   FCurrentDropLeaf := nil;
   FCurrentDropHit := NoZone;
+  FCurrentDropIsRoot := False;
   FTabDragIndex := -1;
   FTabDragStartX := 0;
   FTabDragStartY := 0;
   FTabDragActive := False;
   FTabDragTargetLeaf := nil;
   FTabDragHit := NoZone;
+  FTabDragTargetIsRoot := False;
 
   FBackgroundRect := TRectangle.Create(Self);
   FBackgroundRect.Parent := FWorkspaceLayout;
@@ -595,6 +614,12 @@ begin
       FTree.Clear;
       FActiveLeaf := nil;
       FDesignSplitters.Clear;
+      if FTabs.Count > 0 then
+      begin
+        FTabs[0].Caption := '';
+        FTabs[0].CustomCaption := False;
+        RebuildTabButtons;
+      end;
       Exit;
     end;
 
@@ -658,10 +683,18 @@ begin
     else
     begin
       InternalSetActive(FTree.FirstLeaf);
+      if FTabs.Count > 0 then
+        UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
       RebuildVisualTree;
+      RebuildTabButtons;
       Exit;
     end;
     InternalSetActive(FTree.FirstLeaf);
+    if FTabs.Count > 0 then
+    begin
+      UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
+      RebuildTabButtons;
+    end;
   finally
     Contents.Free;
   end;
@@ -1089,18 +1122,21 @@ var
 begin
   (* Карточка сама перерисовалась — нам важно только обновить host
      и внешних подписчиков. *)
+  Leaf := FindLeafByContent(Sender);
   if FAutoMatchBg then
   begin
-    Leaf := FindLeafByContent(Sender);
     if (Leaf <> nil) and (Leaf = FActiveLeaf) then
       SyncBgFromContent(Sender);
   end;
   if FFocusMode then
   begin
-    Leaf := FindLeafByContent(Sender);
     if (Leaf <> nil) and (Leaf = FActiveLeaf) then
       RebuildVisualTree;
   end;
+  if (FTabs <> nil) then
+    for var I := 0 to FTabs.Count - 1 do
+      UpdateTabCaptionFromTree(FTabs[I]);
+  RebuildTabButtons;
   if Assigned(FOnContentHeaderChanged) then
     FOnContentHeaderChanged(Self, Sender);
 end;
@@ -1160,6 +1196,7 @@ begin
   FDragSourceLeaf := ALeaf;
   FCurrentDropLeaf := nil;
   FCurrentDropHit := NoZone;
+  FCurrentDropIsRoot := False;
   if FDropOverlay <> nil then
   begin
     FDropOverlay.Parent := Self;
@@ -1184,6 +1221,15 @@ begin
   SetTabBarDropHighlight(False);
 
   LocalPt := ScreenToLocal(AScreenPt);
+  if TryShowRootDrop(LocalPt, Hit) then
+  begin
+    FCurrentDropLeaf := nil;
+    FCurrentDropHit := Hit;
+    FCurrentDropIsRoot := True;
+    Exit;
+  end;
+  FCurrentDropIsRoot := False;
+
   TargetLeaf := FindLeafAt(LocalPt);
   if (TargetLeaf = nil) or (TargetLeaf = FDragSourceLeaf) then
   begin
@@ -1210,12 +1256,13 @@ var
   Hit: TDropHitResult;
   Content, TargetContent: TnbDockingPaneContent;
   DropOnTabBar: Boolean;
-  NewCaption: string;
+  DropOnRoot: Boolean;
 begin
   SourceLeaf := FDragSourceLeaf;
   TargetLeaf := FCurrentDropLeaf;
   Hit := FCurrentDropHit;
   DropOnTabBar := IsPointOverTabBar(AScreenPt);
+  DropOnRoot := FCurrentDropIsRoot;
 
   if (not DropOnTabBar) and (not Hit.HasZone) and (FDropOverlay <> nil) then
   begin
@@ -1228,17 +1275,22 @@ begin
   ClearDropOverlay;
   FDragSourceLeaf := nil;
 
+  if DropOnRoot and Hit.HasZone then
+  begin
+    if SourceLeaf = nil then Exit;
+    Content := TakeLeafContent(SourceLeaf);
+    if Content <> nil then
+      SplitRoot(Hit.Direction, Content);
+    Exit;
+  end;
+
   if DropOnTabBar then
   begin
     if SourceLeaf = nil then Exit;
     if FTree.LeafCount <= 1 then Exit;
-    if SourceLeaf.Content <> nil then
-      NewCaption := SourceLeaf.Content.Caption
-    else
-      NewCaption := 'Group';
     Content := TakeLeafContent(SourceLeaf);
     if Content <> nil then
-      AddTabWithContent(NewCaption, Content);
+      AddTabWithContent(Content.Caption, Content);
     Exit;
   end;
 
@@ -1272,6 +1324,7 @@ begin
   SetTabBarDropHighlight(False);
   FCurrentDropLeaf := nil;
   FCurrentDropHit := NoZone;
+  FCurrentDropIsRoot := False;
 end;
 
 function TnbDockingPaneHost.IsPointOverTabBar(
@@ -1300,12 +1353,118 @@ begin
     FTabBar.Stroke.Kind := TBrushKind.None;
 end;
 
+function TnbDockingPaneHost.RootBounds: TRectF;
+var
+  Pt1, Pt2: TPointF;
+begin
+  Result := RectF(0, 0, 0, 0);
+  if FRootLayout = nil then Exit;
+
+  Pt1 := FRootLayout.LocalToAbsolute(PointF(0, 0));
+  Pt2 := FRootLayout.LocalToAbsolute(PointF(FRootLayout.Width,
+    FRootLayout.Height));
+  Pt1 := Self.AbsoluteToLocal(Pt1);
+  Pt2 := Self.AbsoluteToLocal(Pt2);
+  Result := RectF(Pt1.X, Pt1.Y, Pt2.X, Pt2.Y);
+end;
+
+function TnbDockingPaneHost.TryShowRootDrop(const ALocalPt: TPointF;
+  out AHit: TDropHitResult): Boolean;
+var
+  Bounds: TRectF;
+  EdgeSize, LocalX, LocalY: Single;
+begin
+  Result := False;
+  AHit := NoZone;
+  if (FDropOverlay = nil) or (FTree = nil) or (FTree.Root = nil)
+     or (FTree.LeafCount <= 1) then
+    Exit;
+
+  Bounds := RootBounds;
+  if (Bounds.Width <= 0) or (Bounds.Height <= 0) then Exit;
+  if (ALocalPt.X < Bounds.Left) or (ALocalPt.X > Bounds.Right)
+     or (ALocalPt.Y < Bounds.Top) or (ALocalPt.Y > Bounds.Bottom) then
+    Exit;
+
+  EdgeSize := Min(PANE_ROOT_DROP_EDGE_SIZE,
+    Min(Bounds.Width, Bounds.Height) / 3);
+  LocalX := ALocalPt.X - Bounds.Left;
+  LocalY := ALocalPt.Y - Bounds.Top;
+
+  if LocalY <= EdgeSize then
+    AHit := Zone(sdAbove)
+  else if LocalY >= Bounds.Height - EdgeSize then
+    AHit := Zone(sdBelow)
+  else if LocalX <= EdgeSize then
+    AHit := Zone(sdLeft)
+  else if LocalX >= Bounds.Width - EdgeSize then
+    AHit := Zone(sdRight)
+  else
+    Exit;
+
+  FDropOverlay.Parent := Self;
+  FDropOverlay.ShowAt(Bounds);
+  FDropOverlay.Highlight(AHit);
+  Result := True;
+end;
+
 function TnbDockingPaneHost.CreateDefaultContent: TnbDockingPaneContent;
 begin
   Result := TnbDockingPaneContent.Create(Self);
   Result.Stored := False;
-  Result.Caption := 'Pane ' + (FTree.LeafCount + 1).ToString;
+  Result.Caption := NextPaneCaption;
   Result.ShowCloseButton := True;
+end;
+
+function TnbDockingPaneHost.IsEmptyTab(ATab: TPaneHostTab): Boolean;
+begin
+  Result := (ATab = nil) or (ATab.Tree = nil) or (ATab.Tree.Root = nil);
+end;
+
+function TnbDockingPaneHost.NextPaneCaption: string;
+var
+  MaxNo, I: Integer;
+  N: Integer;
+  S: string;
+begin
+  MaxNo := 0;
+  if FTabs <> nil then
+    for I := 0 to FTabs.Count - 1 do
+      if FTabs[I] <> nil then
+      begin
+        if FTabs[I].Tree <> nil then
+          FTabs[I].Tree.EnumerateLeaves(
+            procedure(ALeaf: TPaneLeaf)
+            begin
+              if (ALeaf = nil) or (ALeaf.Content = nil) then Exit;
+              S := Trim(ALeaf.Content.Caption);
+              if (Copy(S, 1, 5) = 'Pane ')
+                 and TryStrToInt(Copy(S, 6, MaxInt), N)
+                 and (N > MaxNo) then
+                MaxNo := N;
+            end);
+      end;
+  Result := 'Pane ' + (MaxNo + 1).ToString;
+end;
+
+function TnbDockingPaneHost.NextGroupCaption: string;
+var
+  MaxNo, I: Integer;
+  CaptionNo: Integer;
+  CaptionText: string;
+begin
+  MaxNo := 0;
+  if FTabs <> nil then
+    for I := 0 to FTabs.Count - 1 do
+      if (FTabs[I] <> nil) and (not IsEmptyTab(FTabs[I])) then
+      begin
+        CaptionText := Trim(FTabs[I].Caption);
+        if (Copy(CaptionText, 1, 6) = 'Group ')
+           and TryStrToInt(Copy(CaptionText, 7, MaxInt), CaptionNo)
+           and (CaptionNo > MaxNo) then
+          MaxNo := CaptionNo;
+      end;
+  Result := 'Group ' + (MaxNo + 1).ToString;
 end;
 
 procedure TnbDockingPaneHost.EnsurePrimaryTab;
@@ -1314,7 +1473,7 @@ var
 begin
   if (FTabs <> nil) and (FTabs.Count > 0) then
     Exit;
-  Tab := TPaneHostTab.Create('Group');
+  Tab := TPaneHostTab.Create('');
   Tab.Tree.OnChanged := HandleTreeChanged;
   FTabs.Add(Tab);
   FActiveTabIndex := 0;
@@ -1338,32 +1497,76 @@ begin
   Result := -1;
   if AContent = nil then Exit;
 
-  Tab := TPaneHostTab.Create(ACaption);
+  if (FTabs <> nil) and (FTabs.Count = 1) and IsEmptyTab(FTabs[0]) then
+  begin
+    Tab := FTabs[0];
+    Tab.Caption := ACaption;
+    Tab.CustomCaption := False;
+    Result := 0;
+  end
+  else
+  begin
+    Tab := TPaneHostTab.Create(ACaption);
+    Result := FTabs.Add(Tab);
+  end;
+
   AContent.Parent := nil;
   WireContent(AContent);
   Leaf := Tab.Tree.SetRootContent(AContent);
   Tab.ActiveLeaf := Leaf;
   Tab.Tree.OnChanged := HandleTreeChanged;
-  Result := FTabs.Add(Tab);
-  ActivateTabIndex(Result);
+  UpdateTabCaptionFromTree(Tab);
+  if Result = FActiveTabIndex then
+  begin
+    FTree := Tab.Tree;
+    InternalSetActive(Leaf);
+    RebuildVisualTree;
+    RebuildTabButtons;
+  end
+  else
+    ActivateTabIndex(Result);
 end;
 
 function TnbDockingPaneHost.CaptionForTab(ATab: TPaneHostTab;
   const AFallback: string): string;
-var
-  Leaf: TPaneLeaf;
 begin
   Result := AFallback;
+  if (ATab <> nil) and (ATab.Caption <> '') then
+    Result := ATab.Caption;
+end;
+
+procedure TnbDockingPaneHost.UpdateTabCaptionFromTree(ATab: TPaneHostTab);
+var
+  Leaf: TPaneLeaf;
+  CaptionText: string;
+  GroupNo: Integer;
+begin
   if (ATab = nil) or (ATab.Tree = nil) then Exit;
+
   if ATab.Tree.LeafCount = 1 then
   begin
+    ATab.CustomCaption := False;
     Leaf := ATab.Tree.FirstLeaf;
-    if (Leaf <> nil) and (Leaf.Content <> nil)
-       and (Leaf.Content.Caption <> '') then
-      Exit(Leaf.Content.Caption);
+    if (Leaf <> nil) and (Leaf.Content <> nil) then
+      ATab.Caption := Leaf.Content.Caption
+    else
+      ATab.Caption := '';
+    Exit;
   end;
+
   if ATab.Tree.LeafCount > 1 then
-    Result := 'Group';
+  begin
+    if ATab.CustomCaption and (ATab.Caption <> '') then Exit;
+
+    CaptionText := Trim(ATab.Caption);
+    if not ((Copy(CaptionText, 1, 6) = 'Group ')
+       and TryStrToInt(Copy(CaptionText, 7, MaxInt), GroupNo)) then
+      ATab.Caption := NextGroupCaption;
+    Exit;
+  end;
+
+  ATab.Caption := '';
+  ATab.CustomCaption := False;
 end;
 
 procedure TnbDockingPaneHost.ActivateTabIndex(AIndex: Integer);
@@ -1397,6 +1600,37 @@ begin
     RebuildTabButtons;
 end;
 
+procedure TnbDockingPaneHost.RemoveActiveTabIfEmpty;
+var
+  NewIndex: Integer;
+begin
+  if (FTabs = nil) or (FActiveTabIndex < 0)
+     or (FActiveTabIndex >= FTabs.Count) or (FTree = nil)
+     or (FTree.Root <> nil) then
+    Exit;
+
+  if FTabs.Count <= 1 then
+  begin
+    FTabs[0].Caption := '';
+    FTabs[0].CustomCaption := False;
+    FTabs[0].ActiveLeaf := nil;
+    FActiveLeaf := nil;
+    RebuildVisualTree;
+    RebuildTabButtons;
+    Exit;
+  end;
+
+  NewIndex := FActiveTabIndex;
+  FTabs.Delete(FActiveTabIndex);
+  if NewIndex >= FTabs.Count then
+    NewIndex := FTabs.Count - 1;
+
+  FActiveTabIndex := -1;
+  FActiveLeaf := nil;
+  FTree := nil;
+  ActivateTabIndex(NewIndex);
+end;
+
 procedure TnbDockingPaneHost.HandleTabButtonMouseDown(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
@@ -1409,6 +1643,7 @@ begin
   FTabDragActive := False;
   FTabDragTargetLeaf := nil;
   FTabDragHit := NoZone;
+  FTabDragTargetIsRoot := False;
   TControlAccess(Sender).Capture;
 end;
 
@@ -1466,6 +1701,42 @@ begin
   end;
 end;
 
+procedure TnbDockingPaneHost.HandleTabButtonDblClick(Sender: TObject);
+var
+  TabIndex: Integer;
+  Tab: TPaneHostTab;
+  NewCaption: string;
+  Leaf: TPaneLeaf;
+begin
+  if not (Sender is TControl) then Exit;
+  TabIndex := TControl(Sender).Tag;
+  if (FTabs = nil) or (TabIndex < 0) or (TabIndex >= FTabs.Count) then Exit;
+
+  CancelTabDrag;
+  Tab := FTabs[TabIndex];
+  NewCaption := CaptionForTab(Tab, Tab.Caption);
+  if not InputQuery('Rename tab', 'Caption', NewCaption) then Exit;
+  NewCaption := Trim(NewCaption);
+  if NewCaption = '' then Exit;
+
+  if (Tab.Tree <> nil) and (Tab.Tree.LeafCount > 1) then
+  begin
+    Tab.Caption := NewCaption;
+    Tab.CustomCaption := True;
+  end
+  else if (Tab.Tree <> nil) and (Tab.Tree.LeafCount = 1) then
+  begin
+    Leaf := Tab.Tree.FirstLeaf;
+    if (Leaf <> nil) and (Leaf.Content <> nil) then
+      Leaf.Content.Caption := NewCaption;
+    Tab.CustomCaption := False;
+    UpdateTabCaptionFromTree(Tab);
+  end
+  else
+    Tab.Caption := NewCaption;
+  RebuildTabButtons;
+end;
+
 procedure TnbDockingPaneHost.UpdateTabDrag(const AScreenPt: TPointF);
 var
   LocalPt: TPointF;
@@ -1487,6 +1758,15 @@ begin
   end;
 
   LocalPt := ScreenToLocal(AScreenPt);
+  if TryShowRootDrop(LocalPt, Hit) then
+  begin
+    FTabDragTargetLeaf := nil;
+    FTabDragHit := Hit;
+    FTabDragTargetIsRoot := True;
+    Exit;
+  end;
+  FTabDragTargetIsRoot := False;
+
   TargetLeaf := FindLeafAt(LocalPt);
   if TargetLeaf = nil then
   begin
@@ -1515,15 +1795,17 @@ var
   Content, TargetContent: TnbDockingPaneContent;
   Hit: TDropHitResult;
   SourceIndex: Integer;
+  TargetIsRoot: Boolean;
 begin
   SourceIndex := FTabDragIndex;
   TargetLeaf := FTabDragTargetLeaf;
   Hit := FTabDragHit;
+  TargetIsRoot := FTabDragTargetIsRoot;
   CancelTabDrag;
 
   if (SourceIndex < 0) or (SourceIndex >= FTabs.Count)
      or (SourceIndex = FActiveTabIndex) or (not Hit.HasZone)
-     or (TargetLeaf = nil) then
+     or ((TargetLeaf = nil) and (not TargetIsRoot)) then
     Exit;
 
   SourceTab := FTabs[SourceIndex];
@@ -1531,7 +1813,6 @@ begin
   SourceLeaf := SourceTab.Tree.FirstLeaf;
   if (SourceLeaf = nil) or (SourceLeaf.Content = nil) then Exit;
 
-  TargetContent := TargetLeaf.Content;
   Content := SourceLeaf.Content;
   Content.Parent := nil;
   SourceTab.Tree.Clear;
@@ -1540,6 +1821,13 @@ begin
   if SourceIndex < FActiveTabIndex then
     Dec(FActiveTabIndex);
   FTree := FTabs[FActiveTabIndex].Tree;
+  if TargetIsRoot then
+  begin
+    SplitRoot(Hit.Direction, Content);
+    Exit;
+  end;
+
+  TargetContent := TargetLeaf.Content;
   TargetLeaf := FindLeafByContent(TargetContent);
   if TargetLeaf = nil then
   begin
@@ -1559,6 +1847,7 @@ begin
   FTabDragActive := False;
   FTabDragTargetLeaf := nil;
   FTabDragHit := NoZone;
+  FTabDragTargetIsRoot := False;
 end;
 
 procedure TnbDockingPaneHost.UpdateTabButtonStates;
@@ -1595,6 +1884,8 @@ begin
   Pos := 8;
   for I := 0 to FTabs.Count - 1 do
   begin
+    if IsEmptyTab(FTabs[I]) then Continue;
+
     Btn := TRectangle.Create(Self);
     FTabButtons.Add(Btn);
     Btn.Parent := FTabBar;
@@ -1608,6 +1899,7 @@ begin
     Btn.OnMouseDown := HandleTabButtonMouseDown;
     Btn.OnMouseMove := HandleTabButtonMouseMove;
     Btn.OnMouseUp := HandleTabButtonMouseUp;
+    Btn.OnDblClick := HandleTabButtonDblClick;
     Btn.Stroke.Kind := TBrushKind.Solid;
     Btn.Stroke.Color := TAlphaColor($553D6FB5);
     if I = FActiveTabIndex then
@@ -1670,9 +1962,9 @@ begin
   if Content = nil then
     Content := CreateDefaultContent;
 
+  if Content.Caption = '' then
+    Content.Caption := NextPaneCaption;
   Caption := Content.Caption;
-  if Caption = '' then
-    Caption := 'Pane ' + (FTabs.Count + 1).ToString;
   AddTabWithContent(Caption, Content);
 end;
 
@@ -1775,6 +2067,28 @@ begin
   NewLeaf := FTree.SplitLeaf(FActiveLeaf, ADirection, ANewContent);
   Result := NewLeaf;
   InternalSetActive(NewLeaf);
+  if (FTabs <> nil) and (FActiveTabIndex >= 0)
+     and (FActiveTabIndex < FTabs.Count) then
+    UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
+  RebuildTabButtons;
+end;
+
+function TnbDockingPaneHost.SplitRoot(ADirection: TSplitDirection;
+  ANewContent: TnbDockingPaneContent): TPaneLeaf;
+begin
+  Result := nil;
+  if (FTree = nil) or (ANewContent = nil) then Exit;
+
+  ANewContent.Parent := nil;
+  WireContent(ANewContent);
+
+  Result := FTree.SplitRoot(ADirection, ANewContent);
+  InternalSetActive(Result);
+  if (FTabs <> nil) and (FActiveTabIndex >= 0)
+     and (FActiveTabIndex < FTabs.Count) then
+    UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
+  RebuildVisualTree;
+  RebuildTabButtons;
 end;
 
 procedure TnbDockingPaneHost.CloseActive;
@@ -1799,6 +2113,11 @@ begin
   FActiveLeaf := nil;
 
   FTree.CloseLeaf(ToClose);
+  RemoveActiveTabIfEmpty;
+  if (FTabs <> nil) and (FActiveTabIndex >= 0)
+     and (FActiveTabIndex < FTabs.Count) then
+    UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
+  RebuildTabButtons;
 
   (* Free контента откладываем: мы внутри стека OnClick кнопки "x",
      которая является потомком ToCloseContent. Синхронный Free убьёт
@@ -1810,7 +2129,8 @@ begin
         ToCloseContent.Free;
       end);
 
-  InternalSetActive(FTree.FirstLeaf);
+  if FTree <> nil then
+    InternalSetActive(FTree.FirstLeaf);
 
   (* Пустое дерево: InternalSetActive вышел рано (nil = nil) — стреляем
      событием вручную для внешних подписчиков. *)
@@ -1859,6 +2179,10 @@ begin
   FActiveLeaf := nil;
   FTree.CloseLeaf(ToClose);
   InternalSetActive(FTree.FirstLeaf);
+  if (FTabs <> nil) and (FActiveTabIndex >= 0)
+     and (FActiveTabIndex < FTabs.Count) then
+    UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
+  RebuildTabButtons;
 
   if (FActiveLeaf = nil) and Assigned(FOnActiveLeafChanged) then
     FOnActiveLeafChanged(Self, nil, nil);

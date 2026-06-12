@@ -93,6 +93,8 @@ type
     procedure Clear;
     procedure SetRootNode(ANode: TPaneNode);
     function SetRootContent(AContent: TnbDockingPaneContent): TPaneLeaf;
+    function SplitRoot(ADirection: TSplitDirection;
+      ANewContent: TnbDockingPaneContent): TPaneLeaf;
     function SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent): TPaneLeaf;
     procedure CloseLeaf(ALeaf: TPaneLeaf);
@@ -381,6 +383,43 @@ begin
 
   Result := TPaneLeaf.Create(Self, AContent);
   FRoot := Result;
+  DoChanged;
+end;
+
+function TPaneTree.SplitRoot(ADirection: TSplitDirection;
+  ANewContent: TnbDockingPaneContent): TPaneLeaf;
+var
+  OldRoot: TPaneNode;
+  NewRoot: TPaneSplit;
+  TargetOrient: TPaneOrientation;
+  InsertBefore: Boolean;
+begin
+  if ANewContent = nil then
+    raise EDockingError.Create('TPaneTree.SplitRoot: nil content');
+
+  if FRoot = nil then
+    Exit(SetRootContent(ANewContent));
+
+  TargetOrient := DirectionToOrientation(ADirection);
+  InsertBefore := DirectionInsertsBefore(ADirection);
+  OldRoot := FRoot;
+  NewRoot := TPaneSplit.Create(Self, TargetOrient);
+  Result := TPaneLeaf.Create(Self, ANewContent);
+
+  FRoot := NewRoot;
+  OldRoot.FParent := nil;
+
+  if InsertBefore then
+  begin
+    NewRoot.InsertChild(0, Result, 0.5);
+    NewRoot.InsertChild(1, OldRoot, 0.5);
+  end
+  else
+  begin
+    NewRoot.InsertChild(0, OldRoot, 0.5);
+    NewRoot.InsertChild(1, Result, 0.5);
+  end;
+
   DoChanged;
 end;
 
