@@ -54,7 +54,7 @@ type
     const AOldCaption, ANewCaption: string) of object;
 
   (* Подписи/цвета header контента изменились — host обновляет внешние
-     зависимости (например, подпись таба в TabHost). Сама карточка
+     зависимости (например, подпись вкладки host-а). Сама карточка
      перерисовывается в setter'е, событие — только для тех, кто СНАРУЖИ. *)
   TPaneHeaderChangedEvent = procedure(Sender: TnbDockingPaneContent) of object;
 
@@ -130,6 +130,8 @@ type
     FMinPaneWidth: Single;
     FMinPaneHeight: Single;
     FAlwaysShowActive: Boolean;
+    FCanClose: Boolean;
+    FShowCloseButton: Boolean;
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
 
@@ -154,6 +156,8 @@ type
     procedure SetHeaderActions(AValue: TDockingPaneHeaderActions);
     procedure SetHeaderActionStyleLookupPrefix(const AValue: string);
     procedure SetAlwaysShowActive(AValue: Boolean);
+    procedure SetCanClose(AValue: Boolean);
+    procedure SetShowCloseButton(AValue: Boolean);
     procedure ApplyHeaderColors;
     procedure DoHeaderChanged;
     procedure UpdateStrokeForActive;
@@ -256,6 +260,10 @@ type
     property MinPaneHeight: Single read FMinPaneHeight write SetMinPaneHeight;
     property AlwaysShowActive: Boolean read FAlwaysShowActive
       write SetAlwaysShowActive default False;
+    property CanClosePane: Boolean read FCanClose write SetCanClose
+      default True;
+    property ShowCloseButton: Boolean read FShowCloseButton
+      write SetShowCloseButton default True;
     property HeaderBgColor: TAlphaColor read FHeaderBgColor
       write SetHeaderBgColor default TAlphaColor($FF2A2A2A);
     property HeaderTextColor: TAlphaColor read FHeaderTextColor
@@ -620,6 +628,8 @@ begin
   FAllowResize := [rsHorizontal, rsVertical];
   FMinPaneWidth := 50;
   FMinPaneHeight := 50;
+  FCanClose := True;
+  FShowCloseButton := True;
 
   FHeaderActions := TDockingPaneHeaderActions.Create(Self);
   FActionButtons := TList<TPaneHeaderActionButton>.Create;
@@ -683,10 +693,7 @@ begin
   FHeaderDivider.HitTest := False;
 
   ApplyHeaderColors;
-  (* Кнопку закрытия добавляет каждый потомок сам в конце своих action'ов:
-     AddHeaderAction('close', 'x', AddCloseHandler, 'Close') — чтобы ✕
-     был самым правым в header. База предоставляет готовый handler через
-     AddDefaultCloseAction. *)
+  AddDefaultCloseAction;
 end;
 
 destructor TnbDockingPaneContent.Destroy;
@@ -881,7 +888,23 @@ end;
 
 function TnbDockingPaneContent.CanClose: Boolean;
 begin
-  Result := True;
+  Result := FCanClose;
+end;
+
+procedure TnbDockingPaneContent.SetCanClose(AValue: Boolean);
+begin
+  if FCanClose = AValue then Exit;
+  FCanClose := AValue;
+end;
+
+procedure TnbDockingPaneContent.SetShowCloseButton(AValue: Boolean);
+begin
+  if FShowCloseButton = AValue then Exit;
+  FShowCloseButton := AValue;
+  if FShowCloseButton then
+    AddDefaultCloseAction
+  else
+    RemoveHeaderAction('close');
 end;
 
 procedure TnbDockingPaneContent.DoPaneActivate;
@@ -1090,7 +1113,15 @@ end;
 
 function TnbDockingPaneContent.AddDefaultCloseAction: TDockingPaneHeaderAction;
 begin
-  Result := AddHeaderAction('close', 'x', HandleCloseAction, 'Close');
+  Result := FindHeaderAction('close');
+  if Result = nil then
+    Result := AddHeaderAction('close', 'x', HandleCloseAction, 'Close')
+  else
+  begin
+    Result.Glyph := 'x';
+    Result.Hint := 'Close';
+    Result.OnExecute := HandleCloseAction;
+  end;
 end;
 
 procedure TnbDockingPaneContent.RemoveHeaderAction(const AId: string);

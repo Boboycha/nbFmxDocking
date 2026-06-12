@@ -2,110 +2,132 @@
 
 Languages: [Русский](README.md) | [English](README.en.md) | [O'zbekcha](README.uz.md)
 
-`nbFMXDocking` is a Delphi FireMonkey component set for tabbed docking UI:
-tabs, split panes, pane header dragging, header actions, and design-time layout
-assembly directly in the IDE.
+`nbFMXDocking` is a Delphi FireMonkey component set for docking-style
+interfaces: split layouts, tabbed groups, pane dragging, header actions, and
+design-time layout assembly directly in RAD Studio.
 
-In practice, it is an FMX foundation for IDE-like, Termius-like, iTerm2-like,
-VS Code panel, or tmux-style interfaces where the application provides its own
-pane content: terminal, SFTP browser, log viewer, editor, monitoring view, and
-so on.
+The current recommended model is simple: place one `TnbDockingPaneHost` on the
+form. The host manages panes, groups, tabs, and drop previews by itself. You do
+not need to place lower-level docking components on the form manually.
 
 ## Status
 
 Implemented and usable:
 
-- `TnbDockingPaneHost` - one docking host with a split-pane tree.
-- `TnbDockingTabHost` - tabs, each tab containing its own `PaneHost`.
-- `TnbDockingPaneContent` - base content card with header, caption, border,
-  inline rename, and action buttons.
-- Horizontal and vertical splits.
-- Design-time pane and split creation through IDE context menus.
+- `TnbDockingPaneHost` as the primary IDE palette component.
+- Design-time pane creation through the host context menu.
+- Design-time split right / split below through the pane context menu.
+- Runtime split layout with horizontal and vertical splitters.
+- Runtime tabs inside `TnbDockingPaneHost`.
+- The `+` button on the tab bar creates a new tab with a new pane.
+- A tab with one pane is captioned with that pane caption.
+- A tab with multiple panes is captioned as `Group`.
+- Pane header drag into split zones.
+- Pane header drag onto the tab bar to make a new tab.
+- Dragging a single-pane tab from the tab bar back into the active group.
+- Tab bar position: top, bottom, left, right.
+- Tab text direction: auto, horizontal, vertical.
 - Header actions through Object Inspector.
-- Tab reordering inside the tab bar.
-- Dragging a single-pane tab into another tab's pane zone.
-- Dragging a pane header into the tab bar or into a split zone.
-- VS Code-style drop preview.
-- Focus mode inside `TnbDockingPaneHost`.
-- Demo project: `DockingTest`.
+- Inline pane title rename.
+- Close button shown by default.
+- Focus mode inside the host.
 
 Not implemented yet:
 
-- a separate shell component for `sidebar | main | bottom`;
 - floating windows;
-- JSON layout persistence.
-
-## Important Package Note
-
-At the moment `src\nbFMXDocking.dpk` is a design-time package:
-
-```pascal
-{$DESIGNONLY}
-```
-
-It is used to install components into the IDE and contains
-`Reg_nbFMXDocking`.
-
-For applications in the current workspace, runtime units are usually consumed
-through the project's `Unit Search Path`, for example:
-
-```text
-Z:\Repos\Devops\nbFmxDocking\src
-```
-
-If the component needs to be distributed as a full runtime BPL later, the
-package should be split into two packages:
-
-- a runtime package without `DesignIDE`, `Reg_*`, and design editors;
-- a design-time package that requires the runtime package.
+- JSON layout save/restore;
+- full design-time tab collection;
+- dragging a whole multi-pane tab group back as a nested group. For now, only single-pane tabs can be dragged back.
 
 ## Components
 
-| Component | Where to use it | Purpose |
-| --- | --- | --- |
-| `TnbDockingPaneContent` | as a base class or design-time pane | Content card: header, caption, border, actions, activation |
-| `TnbDockingPaneHost` | form, layout, sub-layout | One docking layout without tabs |
-| `TnbDockingTabHost` | main application container | Tab bar plus a set of `TnbDockingPaneHost` instances |
-| `TnbDockingDemoPane` | demo/debug | Simple test pane, registered only in DEBUG |
+### `TnbDockingPaneHost`
 
-IDE palette:
+The main component. Place it on a form and usually set `Align = Client`.
+
+Responsible for:
+
+- the split-pane tree;
+- tab bar and group tabs;
+- runtime drag/drop;
+- drop overlay;
+- content creation through `OnContentNeeded`;
+- design-time layout from child `TnbDockingPaneContent` controls.
+
+Important properties:
+
+| Property | Purpose |
+| --- | --- |
+| `VisibleTabs` | Shows or hides the tab bar. |
+| `ShowAddButton` | Shows the `+` button on the tab bar. |
+| `TabPosition` | `dtpTop`, `dtpBottom`, `dtpLeft`, `dtpRight`. |
+| `TabTextDirection` | `ttdAuto`, `ttdHorizontal`, `ttdVertical`. |
+| `DesignChildrenOrientation` | Direction of the initial design-time layout. |
+| `DesignChildrenLayoutMode` | Split layout or align layout for design-time children. |
+| `SplitterSize` | Splitter thickness. |
+| `SplitterColor` | Splitter/cover color. |
+| `AutoMatchBg` | Matches the host background to the active pane. |
+
+Events:
+
+| Event | Purpose |
+| --- | --- |
+| `OnContentNeeded` | Fired when the host needs a new pane. |
+| `OnActiveLeafChanged` | Active pane changed. |
+| `OnContentHeaderChanged` | A pane caption/header changed. |
+| `OnHeaderDrag` | External notification for pane header drag. |
+
+### `TnbDockingPaneContent`
+
+The pane card. It is usually created by the design-time editor or by application code.
+
+Responsible for:
+
+- header;
+- caption;
+- inline rename;
+- close button;
+- action buttons;
+- active pane frame;
+- client area for regular FMX controls.
+
+Important properties:
+
+| Property | Purpose |
+| --- | --- |
+| `Caption` | Pane title and single-pane tab caption. |
+| `HeaderVisible` | Shows the pane header. |
+| `HeaderDragEnabled` | Enables header drag. At runtime the host enables drag for its panes. |
+| `CanClosePane` | Allows the pane to be closed. |
+| `ShowCloseButton` | Shows the close button. Default is `True`. |
+| `HeaderActions` | Collection of action buttons on the right side of the header. |
+| `AllowResize` | Which resize directions are allowed. |
+| `MinPaneWidth`, `MinPaneHeight` | Minimum pane size. |
+
+### `TnbDockingDemoPane`
+
+A development test pane. It is registered on the palette only in `DEBUG`.
+
+## IDE Palette
+
+After installing the package, the `nb FMX Docking` palette contains the primary component:
 
 ```text
-nb FMX Docking
+TnbDockingPaneHost
 ```
 
-## IDE Installation
+`TnbDockingPaneContent` is created through host and pane design-time commands,
+not as the primary palette component.
 
-1. Open `ProjectGroup1.groupproj` or `src\nbFMXDocking.dproj`.
-2. Build the package for Win32 or Win64, depending on your IDE.
-3. Install the BPL in the IDE.
-
-From a Developer Command Prompt:
-
-```powershell
-msbuild src\nbFMXDocking.dproj /t:Build /p:Config=Debug /p:Platform=Win64
-```
-
-Then in RAD Studio:
-
-```text
-Component -> Install Packages -> Add...
-```
-
-Select the built `.bpl` from the project output directory.
-
-For applications, add `src` to the project's Unit Search Path.
-
-## Quick Start: Design-Time
-
-The simplest scenario is to build the layout directly in the form designer.
+## Quick Start In The Designer
 
 1. Place `TnbDockingPaneHost` on the form.
 2. Set `Align = Client`.
-3. Right-click the host -> `Add Pane Content`.
-4. Select the created `TnbDockingPaneContent`.
-5. Right-click the pane -> `Split Pane Right` or `Split Pane Below`.
-6. Place regular FMX controls inside the required `TnbDockingPaneContent`.
+3. If tabs are needed, set `VisibleTabs = True`.
+4. Right-click the host -> `Add Pane Content`.
+5. Select the created pane.
+6. Right-click the pane -> `Split Pane Right` or `Split Pane Below`.
+7. Put regular FMX controls inside the desired `TnbDockingPaneContent`.
 
 Example structure:
 
@@ -119,419 +141,130 @@ Form1
       Button1
 ```
 
-For several panes with the same orientation, use:
+At runtime, the user can:
 
-```text
-TnbDockingPaneHost.DesignChildrenOrientation = poHorizontal
-```
+- drag a pane header into split zones;
+- drag a pane header onto the tab bar to create a new tab;
+- press `+` to create a new tab;
+- drag a single-pane tab back into the active group.
 
-or:
+## Creating Panes In Code
 
-```text
-poVertical
-```
-
-`AutoBuildDesignChildren = True` means that the host builds the docking tree
-from direct design-time `TnbDockingPaneContent` children when the form is
-loaded.
-
-### Putting Controls Into A Pane
-
-`TnbDockingPaneContent` is a regular FMX container. You can place inside it:
-
-- `TLayout`
-- `TRectangle`
-- `TMemo`
-- `TListBox`
-- custom FMX controls
-- any visual controls that work with normal FMX parent/child rules
-
-Do not manually place `TnbDockingPaneContent` inside another
-`TnbDockingPaneContent`. For splits, use the context menu:
-
-```text
-Split Pane Right
-Split Pane Below
-```
-
-The designer will create the correct structure and splitters.
-
-## Quick Start: Runtime With TabHost
-
-Usually an application creates its own descendant of `TnbDockingPaneContent`.
-
-Minimal content example:
+If you need a custom pane when the user presses `+` or requests a split, handle
+`OnContentNeeded`.
 
 ```pascal
-unit Demo.LogPane;
-
-interface
-
-uses
-  System.Classes,
-  FMX.Types, FMX.Controls, FMX.Layouts, FMX.Memo,
-  nbDocking.Types;
-
-type
-  TLogPane = class(TnbDockingPaneContent)
-  private
-    FMemo: TMemo;
-    procedure HandleClear(Sender: TnbDockingPaneContent;
-      const AActionId: string);
-  protected
-    procedure DoPaneActivate; override;
-  public
-    constructor Create(AOwner: TComponent); override;
-    procedure AppendLine(const AText: string);
-  end;
-
-implementation
-
-constructor TLogPane.Create(AOwner: TComponent);
-begin
-  inherited;
-  Caption := 'Log';
-  HeaderBgColor := $FF1C2330;
-  HeaderTextColor := $FFE6EDF3;
-
-  AddHeaderAction('clear', 'MDL2:E74D', HandleClear, 'Clear log');
-  AddDefaultCloseAction;
-
-  FMemo := TMemo.Create(Self);
-  FMemo.Parent := Self;
-  FMemo.Align := TAlignLayout.Client;
-  FMemo.Lines.Text := 'Ready';
-end;
-
-procedure TLogPane.AppendLine(const AText: string);
-begin
-  FMemo.Lines.Add(AText);
-end;
-
-procedure TLogPane.DoPaneActivate;
-begin
-  inherited;
-  if FMemo.CanFocus then
-    FMemo.SetFocus;
-end;
-
-procedure TLogPane.HandleClear(Sender: TnbDockingPaneContent;
-  const AActionId: string);
-begin
-  FMemo.Lines.Clear;
-end;
-
-end.
-```
-
-Form with `TnbDockingTabHost`:
-
-```pascal
-unit Unit1;
-
-interface
-
-uses
-  System.Classes,
-  FMX.Types, FMX.Controls, FMX.Forms, FMX.Layouts,
-  nbDocking.Types, nbDocking.TabHost,
-  Demo.LogPane;
-
-type
-  TForm1 = class(TForm)
-    procedure FormCreate(Sender: TObject);
-  private
-    FTabHost: TnbDockingTabHost;
-    procedure HandleContentNeeded(Sender: TObject;
-      var AContent: TnbDockingPaneContent);
-  end;
-
-implementation
-
-procedure TForm1.FormCreate(Sender: TObject);
-begin
-  FTabHost := TnbDockingTabHost.Create(Self);
-  FTabHost.Parent := Self;
-  FTabHost.Align := TAlignLayout.Client;
-  FTabHost.OnContentNeeded := HandleContentNeeded;
-
-  FTabHost.AddTab('Logs');
-end;
-
-procedure TForm1.HandleContentNeeded(Sender: TObject;
+procedure TForm1.DockHostContentNeeded(Sender: TObject;
   var AContent: TnbDockingPaneContent);
 begin
-  AContent := TLogPane.Create(Self);
-end;
+  AContent := TnbDockingPaneContent.Create(Self);
+  AContent.Caption := 'Terminal';
 
-end.
-```
-
-`AddTab` calls `OnContentNeeded`. If you already have a pane instance:
-
-```pascal
-FTabHost.AddTabWithContent('Server 1', TLogPane.Create(Self));
-```
-
-## Runtime Without Tabs: PaneHost
-
-If tabs are not needed, use `TnbDockingPaneHost` directly.
-
-```pascal
-uses
-  FMX.Layouts,
-  nbDocking.Types,
-  nbDocking.PaneHost,
-  Demo.LogPane;
-
-procedure TForm1.FormCreate(Sender: TObject);
-var
-  Host: TnbDockingPaneHost;
-begin
-  Host := TnbDockingPaneHost.Create(Self);
-  Host.Parent := Self;
-  Host.Align := TAlignLayout.Client;
-
-  Host.SetInitialContent(TLogPane.Create(Host));
-  Host.SplitActive(sdRight, TLogPane.Create(Host));
-  Host.SplitActive(sdBelow, TLogPane.Create(Host));
+  // Any FMX controls can be placed inside AContent:
+  // Memo1.Parent := AContent;
+  // Memo1.Align := TAlignLayout.Client;
 end;
 ```
 
-`SplitActive` accepts these directions:
-
-```pascal
-sdLeft
-sdRight
-sdAbove
-sdBelow
-```
-
-If the second parameter is `nil`, the host asks for a new pane through
-`OnContentNeeded`.
+If no handler is assigned, `TnbDockingPaneHost` creates a simple default pane.
 
 ## Header Actions
 
-`TnbDockingPaneContent` has a collection:
+`TnbDockingPaneContent` has a `HeaderActions` collection. It can be configured
+in Object Inspector or in code.
 
 ```pascal
-HeaderActions: TDockingPaneHeaderActions
+var
+  Action: TDockingPaneHeaderAction;
+begin
+  Action := Pane.HeaderActions.Add as TDockingPaneHeaderAction;
+  Action.Id := 'refresh';
+  Action.Glyph := 'refresh';
+  Action.Hint := 'Refresh';
+  Action.OnExecute := PaneActionExecute;
+end;
 ```
 
-Each action contains:
+The close button is created automatically. It is controlled by:
 
-| Property | Purpose |
-| --- | --- |
-| `Id` | stable button identifier |
-| `Glyph` | symbol or alias |
-| `Hint` | tooltip |
-| `OnExecute` | click handler |
+- `ShowCloseButton`;
+- `CanClosePane`.
 
-Runtime example:
+## Build And Install
 
-```pascal
-AddHeaderAction('refresh', 'MDL2:E72C', HandleRefresh, 'Refresh');
-AddHeaderAction('theme', 'theme', HandleTheme, 'Theme');
-AddDefaultCloseAction;
+The package project is:
+
+```text
+src\nbFMXDocking.dproj
 ```
 
-Call `AddDefaultCloseAction` last if you want the close button to be the
-rightmost button.
-
-### Glyph
-
-`Glyph` supports several aliases:
-
-| Value | Result |
-| --- | --- |
-| `add`, `plus`, `+` | plus |
-| `close`, `x` | close |
-| `broadcast`, `B` | broadcast |
-| `sftp`, `folder`, `S` | folder |
-| `theme`, `T` | theme |
-| `MDL2:E712` | exact Segoe MDL2 Assets glyph |
-
-In Object Inspector, `Glyph` has an editor with a `...` button. It allows you
-to search and select MDL2 symbols visually.
-
-If `Glyph` is not recognized as an alias or MDL2 code, it is rendered as
-regular text.
-
-## Important Properties
-
-### TnbDockingPaneContent
-
-| Property | Purpose |
-| --- | --- |
-| `Caption` | pane title |
-| `HeaderVisible` | show or hide the header |
-| `HeaderDragEnabled` | allow pane header dragging |
-| `AlwaysShowActive` | keep active border even without focus |
-| `HeaderBgColor` | card/header theme background |
-| `HeaderTextColor` | text and glyph color |
-| `HeaderActions` | header button collection |
-
-Events:
-
-| Event | When it fires |
-| --- | --- |
-| `OnCloseRequest` | the pane requests closing |
-| `OnActivateRequest` | the pane requests activation |
-| `OnRenamed` | the user renamed the pane |
-| `OnHeaderChanged` | caption/colors/actions changed |
-
-### TnbDockingPaneHost
-
-| Property | Purpose |
-| --- | --- |
-| `BackgroundColor` | host background |
-| `AutoMatchBg` | adapts the host background to the active pane |
-| `SplitterSize` | splitter size |
-| `SplitterColor` | splitter color |
-| `AutoBuildDesignChildren` | builds tree from design-time pane children |
-| `DesignChildrenOrientation` | orientation of design-time pane children |
-| `FocusMode` | temporarily shows active pane large plus a list on the left |
-
-Events:
-
-| Event | Purpose |
-| --- | --- |
-| `OnContentNeeded` | host asks for a new pane |
-| `OnActiveLeafChanged` | active leaf changed |
-| `OnContentHeaderChanged` | content changed its header |
-| `OnHeaderDrag` | pane header is being dragged |
-
-### TnbDockingTabHost
-
-| Property | Purpose |
-| --- | --- |
-| `TabBarColor` | tab bar background |
-| `TabActiveColor` | active tab color |
-| `TabInactiveColor` | inactive tab color |
-| `TabHoverColor` | hover color |
-| `TabTextColor` | tab text color |
-| `AccentColor` | drop/selection accent |
-| `TabAddVisible` | shows the `+` button |
-| `TabBarActionText` | text of the right tab-bar action button |
-| `TabBarActionVisible` | shows the right tab-bar action button |
-| `PaneHostAutoMatchBg` | forwarded to internal hosts |
-
-Events:
-
-| Event | Purpose |
-| --- | --- |
-| `OnContentNeeded` | new pane is needed for a new tab or split |
-| `OnTabAdded` | tab was added |
-| `OnTabClick` | tab was clicked |
-| `OnTabClosing` | closing can be cancelled |
-| `OnTabClosed` | tab was closed |
-| `OnActiveTabChanged` | active tab changed |
-| `OnTabBarActionClick` | right tab-bar action button was clicked |
-
-## Drag & Drop Behavior
-
-Two drag scenarios are supported.
-
-### Tab
-
-- Drag a tab inside the tab bar to reorder it.
-- Drag a single-pane tab into a pane area to split it into the chosen side.
-- A tab that already contains several panes cannot be dragged as a split
-  source, because it already represents a group.
-
-### Pane Header
-
-- Drag a pane header into the tab bar to turn the pane into a new tab.
-- Drag a pane header into another pane zone to move it as a split.
-
-A drop preview is shown during dragging.
-
-## Focus Mode
-
-`TnbDockingPaneHost.FocusMode` does not change the layout tree. It temporarily
-rebuilds the visual view:
-
-- left side: list of all leaves;
-- right side: active pane using all remaining space.
-
-Leaving focus mode restores the original split proportions.
-
-```pascal
-Host.EnterFocusMode;
-Host.ExitFocusMode;
-Host.ToggleFocusMode;
-```
-
-## Lifetime And Ownership
-
-Key idea: `TPaneTree` stores references to `TnbDockingPaneContent`, but it is
-not their owner.
-
-Practical rules:
-
-- Do not free a pane manually after it has been passed to a host.
-- To close a pane, use `CloseActive`, close action, or `RequestClose`.
-- To move content between hosts, use `TakeActiveContent` / `TakeLeafContent`.
-  The content is removed from the tree but is not destroyed.
-- Do not import `nbDocking.PaneHost` or `nbDocking.TabHost` into the unit of
-  your base content class. Content communicates outward through events.
-- If closing is triggered from a click handler inside the pane being closed,
-  freeing must be deferred to the next tick. The component already does this.
-
-## Build
-
-Requires RAD Studio / Delphi with FireMonkey.
-
-Verified on Delphi 13.x.
-
-```powershell
-msbuild src\nbFMXDocking.dproj /t:Build /p:Config=Debug /p:Platform=Win64
-msbuild demo\DockingTest.dproj /t:Build /p:Config=Debug /p:Platform=Win64
-```
-
-For Win32:
+Build from a Developer Command Prompt:
 
 ```powershell
 msbuild src\nbFMXDocking.dproj /t:Build /p:Config=Debug /p:Platform=Win32
-msbuild demo\DockingTest.dproj /t:Build /p:Config=Debug /p:Platform=Win32
 ```
 
-Demo executable:
+The IDE needs the Win32 design-time BPL. After building, install the `.bpl` via:
 
 ```text
-bin\demo\<Platform>\<Config>\DockingTest.exe
+Component -> Install Packages -> Add...
 ```
 
-## Source Layout
+For applications, add `src` to the project `Unit Search Path`, for example:
 
 ```text
-src/
-  nbDocking.Types.pas          base content class, actions, shared enums
-  nbDocking.PaneTree.pas       pure docking tree model
-  nbDocking.PaneHost.pas       visual host for one tree
-  nbDocking.DropOverlay.pas    drop preview
-  nbDocking.TabHost.pas        tab shell and drag/drop routing
-  nbDocking.DesignEditors.pas  IDE context menu and glyph editor
-  nbDocking.Demo.pas           DEBUG-only demo pane
-  Reg_nbFMXDocking.pas         IDE registration
-  nbFMXDocking.dpk             design-time package
-
-demo/
-  DockingTest.dproj
-  Unit1.pas
-  Unit1.fmx
+Z:\Repos\Devops\nbFmxDocking\src
 ```
 
-## Roadmap
+## Important Package Note
 
-Planned next layers:
+The current package is a design-time package:
 
-1. `nbDocking.Shell` - multi-zone layout: sidebar, main, bottom.
-2. `nbDocking.FloatWindow` - undock a pane into a separate form.
-3. `nbDocking.Persistence` - save and restore layouts.
+```pascal
+{$DESIGNONLY}
+```
 
-## Project Documentation
+It contains the registration unit and design editors. For a full runtime BPL
+distribution later, split the project into two packages:
 
-- [Development Report](docs/DEVELOPMENT_REPORT.md)
-- [Developer Guide](docs/DEVELOPER_GUIDE.md)
+- a runtime package without `DesignIDE`, `Reg_*`, and design editors;
+- a design-time package that depends on the runtime package.
 
+## Project Files
+
+```text
+src\nbDocking.PaneHost.pas       main host, split tree, tab bar, drag/drop
+src\nbDocking.Types.pas          TnbDockingPaneContent and header actions
+src\nbDocking.PaneTree.pas       split-pane tree
+src\nbDocking.DropOverlay.pas    drop zone preview
+src\nbDocking.DesignEditors.pas  design-time context menu and property editors
+src\Reg_nbFMXDocking.pas         IDE component registration
+demo\DockingDesignTest.dproj     test project
+```
+
+## Current Limitations
+
+- Host tabs are runtime-only for now; there is no full published tab collection in Object Inspector.
+- Dragging back from the tab bar is supported for single-pane tabs. A tab group is not yet dragged back as one nested group.
+- `TnbDockingTabHost` remains in the source tree as a legacy/compatibility unit, but the recommended path is `TnbDockingPaneHost`.
+- Layout persistence should currently be implemented by application code.
+
+## Pre-Publish Check
+
+Minimum build check:
+
+```powershell
+msbuild src\nbFMXDocking.dproj /t:Build /p:Config=Debug /p:Platform=Win32
+msbuild src\nbFMXDocking.dproj /t:Build /p:Config=Debug /p:Platform=Win64
+msbuild demo\DockingDesignTest.dproj /t:Build /p:Config=Debug /p:Platform=Win64
+```
+
+Recommended runtime smoke-test:
+
+1. Create a few panes at design time.
+2. Run the application.
+3. Drag a pane into a split zone.
+4. Drag a pane onto the tab bar.
+5. Switch between tabs.
+6. Press `+`.
+7. Drag a single-pane tab back into the active group.

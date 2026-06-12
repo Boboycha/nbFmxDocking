@@ -11,7 +11,6 @@ uses
   DesignIntf,
   nbDocking.Types,
   nbDocking.PaneHost,
-  nbDocking.TabHost,
   nbDocking.Demo,
   nbDocking.DesignEditors;
 
@@ -31,6 +30,8 @@ begin
     'MinPaneWidth',
     'MinPaneHeight',
     'AlwaysShowActive',
+    'CanClosePane',
+    'ShowCloseButton',
     'HeaderBgColor',
     'HeaderTextColor',
     'HeaderActions'
@@ -52,6 +53,10 @@ begin
     'AutoBuildDesignChildren',
     'DesignChildrenLayoutMode',
     'DesignChildrenOrientation',
+    'VisibleTabs',
+    'ShowAddButton',
+    'TabPosition',
+    'TabTextDirection',
     'SplitterSize',
     'SplitterColor'
   ]);
@@ -67,9 +72,7 @@ end;
 procedure Register;
 begin
   RegisterComponents(PaletteName, [
-    TnbDockingPaneContent,
-    TnbDockingPaneHost,
-    TnbDockingTabHost
+    TnbDockingPaneHost
   ]);
   {$IFDEF DEBUG}
   RegisterComponents(PaletteName, [TnbDockingDemoPane]);

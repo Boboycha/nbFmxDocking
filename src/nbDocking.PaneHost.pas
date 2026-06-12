@@ -16,7 +16,19 @@ uses
   System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Objects,
   FMX.Graphics,
-  nbDocking.Types, nbDocking.PaneTree;
+  nbDocking.Types, nbDocking.PaneTree, nbDocking.DropOverlay;
+
+const
+  PANE_TAB_BAR_HEIGHT = 44;
+  PANE_TAB_ADD_BUTTON_WIDTH = 34;
+  PANE_TAB_DRAG_THRESHOLD = 5;
+  {$IFDEF LINUX}
+  PANE_TAB_ICON_FONT = '';
+  PANE_TAB_ICON_ADD = '+';
+  {$ELSE}
+  PANE_TAB_ICON_FONT = 'Segoe MDL2 Assets';
+  PANE_TAB_ICON_ADD = #$E710;
+  {$ENDIF}
 
 type
   TContentFactoryEvent = procedure(Sender: TObject;
@@ -26,10 +38,12 @@ type
   TContentHeaderChangeEvent = procedure(Sender: TObject;
     AContent: TnbDockingPaneContent) of object;
   TDesignChildrenLayoutMode = (dlmSplit, dlmAlign);
+  TnbDockingTabPosition = (dtpTop, dtpBottom, dtpLeft, dtpRight);
+  TnbDockingTabTextDirection = (ttdAuto, ttdHorizontal, ttdVertical);
 
   TnbDockingPaneHost = class;
 
-  (* Drag заголовка карточки транслируется наверх — drop-цель ищет TabHost. *)
+  (* Drag заголовка карточки обрабатывается host-ом и также транслируется наружу. *)
   TPaneHeaderDragEvent = procedure(ASender: TnbDockingPaneHost; ALeaf: TPaneLeaf;
     APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF) of object;
 
@@ -39,6 +53,15 @@ type
     Split: TPaneSplit;
     LeftChildIndex: Integer;
     constructor Create(ASplit: TPaneSplit; ALeftIdx: Integer);
+  end;
+
+  TPaneHostTab = class
+  public
+    Caption: string;
+    Tree: TPaneTree;
+    ActiveLeaf: TPaneLeaf;
+    constructor Create(const ACaption: string);
+    destructor Destroy; override;
   end;
 
   (* Элемент сайдбара focus-mode — клик переключает активный лист. *)
@@ -51,6 +74,13 @@ type
   private
     FTree: TPaneTree;
     FActiveLeaf: TPaneLeaf;
+    FTabs: TObjectList<TPaneHostTab>;
+    FActiveTabIndex: Integer;
+    FTabButtons: TObjectList<TRectangle>;
+    FWorkspaceLayout: TLayout;
+    FTabBar: TRectangle;
+    FAddButton: TRectangle;
+    FAddGlyph: TText;
     FRootLayout: TLayout;
     FBuilding: Boolean;
     FRebuildingDesignChildren: Boolean;
@@ -69,6 +99,20 @@ type
     FAutoBuildDesignChildren: Boolean;
     FDesignChildrenOrientation: TPaneOrientation;
     FDesignChildrenLayoutMode: TDesignChildrenLayoutMode;
+    FVisibleTabs: Boolean;
+    FShowAddButton: Boolean;
+    FTabPosition: TnbDockingTabPosition;
+    FTabTextDirection: TnbDockingTabTextDirection;
+    FDropOverlay: TDockingDropOverlay;
+    FDragSourceLeaf: TPaneLeaf;
+    FCurrentDropLeaf: TPaneLeaf;
+    FCurrentDropHit: TDropHitResult;
+    FTabDragIndex: Integer;
+    FTabDragStartX: Single;
+    FTabDragStartY: Single;
+    FTabDragActive: Boolean;
+    FTabDragTargetLeaf: TPaneLeaf;
+    FTabDragHit: TDropHitResult;
     FOnContentNeeded: TContentFactoryEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
@@ -83,6 +127,34 @@ type
     procedure HandleContentHeaderChanged(Sender: TnbDockingPaneContent);
     procedure HandleContentHeaderDrag(ASender: TnbDockingPaneContent;
       APhase: TPaneHeaderDragPhase; const AScreenPt: TPointF);
+    procedure PaneHeaderDragBegin(ALeaf: TPaneLeaf);
+    procedure PaneHeaderDragUpdate(const AScreenPt: TPointF);
+    procedure PaneHeaderDragEnd(const AScreenPt: TPointF);
+    procedure ClearDropOverlay;
+    function IsPointOverTabBar(const AScreenPt: TPointF): Boolean;
+    procedure SetTabBarDropHighlight(AValue: Boolean);
+    function CreateDefaultContent: TnbDockingPaneContent;
+    procedure EnsurePrimaryTab;
+    procedure SaveActiveTabState;
+    function AddTabWithContent(const ACaption: string;
+      AContent: TnbDockingPaneContent): Integer;
+    function CaptionForTab(ATab: TPaneHostTab; const AFallback: string): string;
+    procedure ActivateTabIndex(AIndex: Integer);
+    procedure UpdateTabButtonStates;
+    procedure RebuildTabButtons;
+    procedure HandleTabButtonMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure HandleTabButtonMouseMove(Sender: TObject; Shift: TShiftState;
+      X, Y: Single);
+    procedure HandleTabButtonMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure UpdateTabDrag(const AScreenPt: TPointF);
+    procedure FinishTabDrag(const AScreenPt: TPointF);
+    procedure CancelTabDrag;
+    procedure HandleAddButtonClick(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure HandleAddButtonMouseEnter(Sender: TObject);
+    procedure HandleAddButtonMouseLeave(Sender: TObject);
     procedure HandleSplitLayoutResize(Sender: TObject);
     procedure HandleSplitterMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -134,6 +206,11 @@ type
     procedure SetAutoBuildDesignChildren(AValue: Boolean);
     procedure SetDesignChildrenOrientation(AValue: TPaneOrientation);
     procedure SetDesignChildrenLayoutMode(AValue: TDesignChildrenLayoutMode);
+    procedure SetVisibleTabs(AValue: Boolean);
+    procedure SetShowAddButton(AValue: Boolean);
+    procedure SetTabPosition(AValue: TnbDockingTabPosition);
+    procedure SetTabTextDirection(AValue: TnbDockingTabTextDirection);
+    procedure UpdateTabBarChrome;
   protected
     procedure Loaded; override;
     procedure Resize; override;
@@ -191,6 +268,14 @@ type
     property DesignChildrenLayoutMode: TDesignChildrenLayoutMode
       read FDesignChildrenLayoutMode write SetDesignChildrenLayoutMode
       default dlmSplit;
+    property VisibleTabs: Boolean read FVisibleTabs write SetVisibleTabs
+      default False;
+    property ShowAddButton: Boolean read FShowAddButton write SetShowAddButton
+      default True;
+    property TabPosition: TnbDockingTabPosition read FTabPosition
+      write SetTabPosition default dtpTop;
+    property TabTextDirection: TnbDockingTabTextDirection
+      read FTabTextDirection write SetTabTextDirection default ttdAuto;
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
     property OnActiveLeafChanged: TActiveLeafChangeEvent
@@ -203,6 +288,9 @@ type
 
 implementation
 
+type
+  TControlAccess = class(TControl);
+
 { TSplitterInfo }
 
 constructor TSplitterInfo.Create(ASplit: TPaneSplit; ALeftIdx: Integer);
@@ -212,6 +300,22 @@ begin
   LeftChildIndex := ALeftIdx;
 end;
 
+{ TPaneHostTab }
+
+constructor TPaneHostTab.Create(const ACaption: string);
+begin
+  inherited Create;
+  Caption := ACaption;
+  Tree := TPaneTree.Create;
+  ActiveLeaf := nil;
+end;
+
+destructor TPaneHostTab.Destroy;
+begin
+  Tree.Free;
+  inherited;
+end;
+
 { TnbDockingPaneHost }
 
 constructor TnbDockingPaneHost.Create(AOwner: TComponent);
@@ -219,8 +323,11 @@ begin
   inherited;
   Align := TAlignLayout.Client;
 
-  FTree := TPaneTree.Create;
-  FTree.OnChanged := HandleTreeChanged;
+  FTabs := TObjectList<TPaneHostTab>.Create(True);
+  FTabButtons := TObjectList<TRectangle>.Create(True);
+  FActiveTabIndex := -1;
+  FTree := nil;
+  EnsurePrimaryTab;
 
   FBuilding := False;
   FRebuildingDesignChildren := False;
@@ -236,9 +343,75 @@ begin
   FAutoBuildDesignChildren := True;
   FDesignChildrenOrientation := poHorizontal;
   FDesignChildrenLayoutMode := dlmSplit;
+  FVisibleTabs := False;
+  FShowAddButton := True;
+  FTabPosition := dtpTop;
+  FTabTextDirection := ttdAuto;
+
+  FWorkspaceLayout := TLayout.Create(Self);
+  FWorkspaceLayout.Parent := Self;
+  FWorkspaceLayout.Stored := False;
+  FWorkspaceLayout.Locked := True;
+  FWorkspaceLayout.Align := TAlignLayout.Client;
+  FWorkspaceLayout.HitTest := True;
+
+  FTabBar := TRectangle.Create(Self);
+  FTabBar.Parent := Self;
+  FTabBar.Stored := False;
+  FTabBar.Locked := True;
+  FTabBar.Align := TAlignLayout.None;
+  FTabBar.Visible := False;
+  FTabBar.HitTest := True;
+  FTabBar.Fill.Kind := TBrushKind.Solid;
+  FTabBar.Fill.Color := TAlphaColor($FFE5E5E5);
+  FTabBar.Stroke.Kind := TBrushKind.None;
+
+  FAddButton := TRectangle.Create(Self);
+  FAddButton.Parent := FTabBar;
+  FAddButton.Stored := False;
+  FAddButton.Locked := True;
+  FAddButton.Align := TAlignLayout.None;
+  FAddButton.Width := PANE_TAB_ADD_BUTTON_WIDTH;
+  FAddButton.Height := PANE_TAB_ADD_BUTTON_WIDTH - 10;
+  FAddButton.Fill.Kind := TBrushKind.None;
+  FAddButton.Stroke.Kind := TBrushKind.None;
+  FAddButton.XRadius := 6;
+  FAddButton.YRadius := 6;
+  FAddButton.HitTest := True;
+  FAddButton.OnMouseDown := HandleAddButtonClick;
+  FAddButton.OnMouseEnter := HandleAddButtonMouseEnter;
+  FAddButton.OnMouseLeave := HandleAddButtonMouseLeave;
+
+  FAddGlyph := TText.Create(Self);
+  FAddGlyph.Parent := FAddButton;
+  FAddGlyph.Stored := False;
+  FAddGlyph.Locked := True;
+  FAddGlyph.Align := TAlignLayout.Client;
+  FAddGlyph.Text := PANE_TAB_ICON_ADD;
+  FAddGlyph.TextSettings.HorzAlign := TTextAlign.Center;
+  FAddGlyph.TextSettings.VertAlign := TTextAlign.Center;
+  FAddGlyph.TextSettings.Font.Family := PANE_TAB_ICON_FONT;
+  FAddGlyph.TextSettings.Font.Size := 15;
+  FAddGlyph.TextSettings.FontColor := TAlphaColor($FF202020);
+  FAddGlyph.HitTest := False;
+
+  FDropOverlay := TDockingDropOverlay.Create(Self);
+  FDropOverlay.Parent := Self;
+  FDropOverlay.Stored := False;
+  FDropOverlay.Locked := True;
+  FDropOverlay.HideOverlay;
+  FDragSourceLeaf := nil;
+  FCurrentDropLeaf := nil;
+  FCurrentDropHit := NoZone;
+  FTabDragIndex := -1;
+  FTabDragStartX := 0;
+  FTabDragStartY := 0;
+  FTabDragActive := False;
+  FTabDragTargetLeaf := nil;
+  FTabDragHit := NoZone;
 
   FBackgroundRect := TRectangle.Create(Self);
-  FBackgroundRect.Parent := Self;
+  FBackgroundRect.Parent := FWorkspaceLayout;
   FBackgroundRect.Stored := False;
   FBackgroundRect.Locked := True;
   FBackgroundRect.Align := TAlignLayout.Contents;
@@ -249,12 +422,13 @@ begin
   FBackgroundRect.SendToBack;
 
   FRootLayout := TLayout.Create(Self);
-  FRootLayout.Parent := Self;
+  FRootLayout.Parent := FWorkspaceLayout;
   FRootLayout.Stored := False;
   FRootLayout.Locked := True;
   FRootLayout.Align := TAlignLayout.Client;
   FRootLayout.Visible := False;
-  FRootLayout.HitTest := False;
+  FRootLayout.HitTest := True;
+  UpdateTabBarChrome;
 end;
 
 procedure TnbDockingPaneHost.Loaded;
@@ -276,6 +450,7 @@ var
   Contents: TList<TnbDockingPaneContent>;
 begin
   inherited;
+  UpdateTabBarChrome;
 
   if (csLoading in ComponentState)
      or (not FAutoBuildDesignChildren)
@@ -342,7 +517,8 @@ begin
   FDesignSplitters.Free;
   FSplitterInfos.Free;
   FSplitterCovers.Free;
-  FTree.Free;
+  FTabButtons.Free;
+  FTabs.Free;
   inherited;
 end;
 
@@ -353,6 +529,8 @@ begin
   AContent.OnActivateRequest := HandleContentActivateRequest;
   AContent.OnHeaderChanged := HandleContentHeaderChanged;
   AContent.OnHeaderDrag := HandleContentHeaderDrag;
+  if not (csDesigning in ComponentState) then
+    AContent.HeaderDragEnabled := True;
 end;
 
 procedure TnbDockingPaneHost.UnwireContent(AContent: TnbDockingPaneContent);
@@ -479,9 +657,9 @@ begin
       LayoutDesignChildren(Contents)
     else
     begin
-      if FRootLayout <> nil then
-        FRootLayout.Visible := False;
-      LayoutLoadedSplitters(Contents);
+      InternalSetActive(FTree.FirstLeaf);
+      RebuildVisualTree;
+      Exit;
     end;
     InternalSetActive(FTree.FirstLeaf);
   finally
@@ -623,7 +801,8 @@ begin
 
     if FDesignChildrenOrientation = poVertical then
     begin
-      AvailableSize := Height - (FSplitterSize * SplitterCount);
+      AvailableSize := Height - Padding.Top - Padding.Bottom
+        - (FSplitterSize * SplitterCount);
       if AvailableSize <= 0 then
         AvailableSize := 600;
       Offset := 0;
@@ -694,7 +873,8 @@ begin
     end
     else
     begin
-      AvailableSize := Width - (FSplitterSize * SplitterCount);
+      AvailableSize := Width - Padding.Left - Padding.Right
+        - (FSplitterSize * SplitterCount);
       if AvailableSize <= 0 then
         AvailableSize := 800;
       Offset := 0;
@@ -805,7 +985,7 @@ begin
           if Content.Height < Content.MinPaneHeight then
             Content.Height := Content.MinPaneHeight;
       end;
-      Content.HeaderDragEnabled := False;
+      Content.HeaderDragEnabled := not (csDesigning in ComponentState);
       Content.BringToFront;
       AddAlignedSplitterFor(Content);
     end;
@@ -907,8 +1087,8 @@ procedure TnbDockingPaneHost.HandleContentHeaderChanged(
 var
   Leaf: TPaneLeaf;
 begin
-  (* Карточка сама перерисовалась — нам важно только обновить внешних
-     подписчиков (например, подписи табов в TabHost). *)
+  (* Карточка сама перерисовалась — нам важно только обновить host
+     и внешних подписчиков. *)
   if FAutoMatchBg then
   begin
     Leaf := FindLeafByContent(Sender);
@@ -964,7 +1144,549 @@ var
 begin
   Leaf := FindLeafByContent(ASender);
   if Leaf = nil then Exit;
+  if not (csDesigning in ComponentState) then
+  begin
+    case APhase of
+      phdStart: PaneHeaderDragBegin(Leaf);
+      phdMove: PaneHeaderDragUpdate(AScreenPt);
+      phdEnd: PaneHeaderDragEnd(AScreenPt);
+    end;
+  end;
   NotifyHeaderDrag(Leaf, APhase, AScreenPt);
+end;
+
+procedure TnbDockingPaneHost.PaneHeaderDragBegin(ALeaf: TPaneLeaf);
+begin
+  FDragSourceLeaf := ALeaf;
+  FCurrentDropLeaf := nil;
+  FCurrentDropHit := NoZone;
+  if FDropOverlay <> nil then
+  begin
+    FDropOverlay.Parent := Self;
+    FDropOverlay.HideOverlay;
+  end;
+end;
+
+procedure TnbDockingPaneHost.PaneHeaderDragUpdate(const AScreenPt: TPointF);
+var
+  LocalPt: TPointF;
+  TargetLeaf: TPaneLeaf;
+  Hit: TDropHitResult;
+begin
+  if (FDragSourceLeaf = nil) or (FDropOverlay = nil) then Exit;
+
+  if IsPointOverTabBar(AScreenPt) then
+  begin
+    ClearDropOverlay;
+    SetTabBarDropHighlight(True);
+    Exit;
+  end;
+  SetTabBarDropHighlight(False);
+
+  LocalPt := ScreenToLocal(AScreenPt);
+  TargetLeaf := FindLeafAt(LocalPt);
+  if (TargetLeaf = nil) or (TargetLeaf = FDragSourceLeaf) then
+  begin
+    ClearDropOverlay;
+    Exit;
+  end;
+
+  if TargetLeaf <> FCurrentDropLeaf then
+  begin
+    FCurrentDropLeaf := TargetLeaf;
+    FDropOverlay.Parent := Self;
+    FDropOverlay.ShowAt(LeafBounds(TargetLeaf));
+  end;
+
+  Hit := FDropOverlay.HitTestZone(LocalPt.X, LocalPt.Y);
+  FCurrentDropHit := Hit;
+  FDropOverlay.Highlight(Hit);
+end;
+
+procedure TnbDockingPaneHost.PaneHeaderDragEnd(const AScreenPt: TPointF);
+var
+  LocalPt: TPointF;
+  TargetLeaf, SourceLeaf: TPaneLeaf;
+  Hit: TDropHitResult;
+  Content, TargetContent: TnbDockingPaneContent;
+  DropOnTabBar: Boolean;
+  NewCaption: string;
+begin
+  SourceLeaf := FDragSourceLeaf;
+  TargetLeaf := FCurrentDropLeaf;
+  Hit := FCurrentDropHit;
+  DropOnTabBar := IsPointOverTabBar(AScreenPt);
+
+  if (not DropOnTabBar) and (not Hit.HasZone) and (FDropOverlay <> nil) then
+  begin
+    LocalPt := ScreenToLocal(AScreenPt);
+    TargetLeaf := FindLeafAt(LocalPt);
+    if (TargetLeaf <> nil) and (TargetLeaf <> SourceLeaf) then
+      Hit := FDropOverlay.HitTestZone(LocalPt.X, LocalPt.Y);
+  end;
+
+  ClearDropOverlay;
+  FDragSourceLeaf := nil;
+
+  if DropOnTabBar then
+  begin
+    if SourceLeaf = nil then Exit;
+    if FTree.LeafCount <= 1 then Exit;
+    if SourceLeaf.Content <> nil then
+      NewCaption := SourceLeaf.Content.Caption
+    else
+      NewCaption := 'Group';
+    Content := TakeLeafContent(SourceLeaf);
+    if Content <> nil then
+      AddTabWithContent(NewCaption, Content);
+    Exit;
+  end;
+
+  if (SourceLeaf = nil) or (TargetLeaf = nil) or (TargetLeaf = SourceLeaf)
+     or (not Hit.HasZone) then
+    Exit;
+
+  TargetContent := TargetLeaf.Content;
+  Content := TakeLeafContent(SourceLeaf);
+  if Content = nil then Exit;
+  TargetLeaf := FindLeafByContent(TargetContent);
+  if TargetLeaf = nil then
+  begin
+    if FTree.Root = nil then
+      SetInitialContent(Content)
+    else
+    begin
+      InternalSetActive(FTree.FirstLeaf);
+      SplitActive(Hit.Direction, Content);
+    end;
+    Exit;
+  end;
+  ActiveLeaf := TargetLeaf;
+  SplitActive(Hit.Direction, Content);
+end;
+
+procedure TnbDockingPaneHost.ClearDropOverlay;
+begin
+  if FDropOverlay <> nil then
+    FDropOverlay.HideOverlay;
+  SetTabBarDropHighlight(False);
+  FCurrentDropLeaf := nil;
+  FCurrentDropHit := NoZone;
+end;
+
+function TnbDockingPaneHost.IsPointOverTabBar(
+  const AScreenPt: TPointF): Boolean;
+var
+  Pt: TPointF;
+begin
+  Result := False;
+  if (not FVisibleTabs) or (FTabBar = nil) or (not FTabBar.Visible) then
+    Exit;
+  Pt := FTabBar.ScreenToLocal(AScreenPt);
+  Result := (Pt.X >= 0) and (Pt.X <= FTabBar.Width)
+    and (Pt.Y >= 0) and (Pt.Y <= FTabBar.Height);
+end;
+
+procedure TnbDockingPaneHost.SetTabBarDropHighlight(AValue: Boolean);
+begin
+  if FTabBar = nil then Exit;
+  if AValue then
+  begin
+    FTabBar.Stroke.Kind := TBrushKind.Solid;
+    FTabBar.Stroke.Color := TAlphaColor($FF3D6FB5);
+    FTabBar.Stroke.Thickness := 2;
+  end
+  else
+    FTabBar.Stroke.Kind := TBrushKind.None;
+end;
+
+function TnbDockingPaneHost.CreateDefaultContent: TnbDockingPaneContent;
+begin
+  Result := TnbDockingPaneContent.Create(Self);
+  Result.Stored := False;
+  Result.Caption := 'Pane ' + (FTree.LeafCount + 1).ToString;
+  Result.ShowCloseButton := True;
+end;
+
+procedure TnbDockingPaneHost.EnsurePrimaryTab;
+var
+  Tab: TPaneHostTab;
+begin
+  if (FTabs <> nil) and (FTabs.Count > 0) then
+    Exit;
+  Tab := TPaneHostTab.Create('Group');
+  Tab.Tree.OnChanged := HandleTreeChanged;
+  FTabs.Add(Tab);
+  FActiveTabIndex := 0;
+  FTree := Tab.Tree;
+end;
+
+procedure TnbDockingPaneHost.SaveActiveTabState;
+begin
+  if (FTabs = nil) or (FActiveTabIndex < 0)
+     or (FActiveTabIndex >= FTabs.Count) then
+    Exit;
+  FTabs[FActiveTabIndex].ActiveLeaf := FActiveLeaf;
+end;
+
+function TnbDockingPaneHost.AddTabWithContent(const ACaption: string;
+  AContent: TnbDockingPaneContent): Integer;
+var
+  Tab: TPaneHostTab;
+  Leaf: TPaneLeaf;
+begin
+  Result := -1;
+  if AContent = nil then Exit;
+
+  Tab := TPaneHostTab.Create(ACaption);
+  AContent.Parent := nil;
+  WireContent(AContent);
+  Leaf := Tab.Tree.SetRootContent(AContent);
+  Tab.ActiveLeaf := Leaf;
+  Tab.Tree.OnChanged := HandleTreeChanged;
+  Result := FTabs.Add(Tab);
+  ActivateTabIndex(Result);
+end;
+
+function TnbDockingPaneHost.CaptionForTab(ATab: TPaneHostTab;
+  const AFallback: string): string;
+var
+  Leaf: TPaneLeaf;
+begin
+  Result := AFallback;
+  if (ATab = nil) or (ATab.Tree = nil) then Exit;
+  if ATab.Tree.LeafCount = 1 then
+  begin
+    Leaf := ATab.Tree.FirstLeaf;
+    if (Leaf <> nil) and (Leaf.Content <> nil)
+       and (Leaf.Content.Caption <> '') then
+      Exit(Leaf.Content.Caption);
+  end;
+  if ATab.Tree.LeafCount > 1 then
+    Result := 'Group';
+end;
+
+procedure TnbDockingPaneHost.ActivateTabIndex(AIndex: Integer);
+var
+  OldLeaf, NewLeaf: TPaneLeaf;
+begin
+  EnsurePrimaryTab;
+  if (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+  if AIndex = FActiveTabIndex then Exit;
+
+  OldLeaf := FActiveLeaf;
+  if (OldLeaf <> nil) and (OldLeaf.Content <> nil) then
+  begin
+    OldLeaf.Content.Deactivate;
+    OldLeaf.Content.SetActive(False);
+  end;
+
+  SaveActiveTabState;
+  FActiveTabIndex := AIndex;
+  FTree := FTabs[AIndex].Tree;
+  FTree.OnChanged := HandleTreeChanged;
+  FActiveLeaf := nil;
+  NewLeaf := FTabs[AIndex].ActiveLeaf;
+  if NewLeaf = nil then
+    NewLeaf := FTree.FirstLeaf;
+  InternalSetActive(NewLeaf);
+  RebuildVisualTree;
+  if (FTabButtons <> nil) and (FTabButtons.Count = FTabs.Count) then
+    UpdateTabButtonStates
+  else
+    RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.HandleTabButtonMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if not (Sender is TControl) then Exit;
+
+  FTabDragIndex := TControl(Sender).Tag;
+  FTabDragStartX := X;
+  FTabDragStartY := Y;
+  FTabDragActive := False;
+  FTabDragTargetLeaf := nil;
+  FTabDragHit := NoZone;
+  TControlAccess(Sender).Capture;
+end;
+
+procedure TnbDockingPaneHost.HandleTabButtonMouseMove(Sender: TObject;
+  Shift: TShiftState; X, Y: Single);
+var
+  ScreenPt: TPointF;
+begin
+  if FTabDragIndex < 0 then Exit;
+  if not (Sender is TControl) then Exit;
+
+  if (not FTabDragActive)
+     and ((Abs(X - FTabDragStartX) > PANE_TAB_DRAG_THRESHOLD)
+          or (Abs(Y - FTabDragStartY) > PANE_TAB_DRAG_THRESHOLD)) then
+    FTabDragActive := True;
+
+  if FTabDragActive then
+  begin
+    ScreenPt := TControl(Sender).LocalToScreen(PointF(X, Y));
+    UpdateTabDrag(ScreenPt);
+  end;
+end;
+
+procedure TnbDockingPaneHost.HandleTabButtonMouseUp(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var
+  TabIndex: Integer;
+  WasDragging: Boolean;
+  ScreenPt: TPointF;
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if not (Sender is TControl) then Exit;
+
+  TControlAccess(Sender).ReleaseCapture;
+  TabIndex := FTabDragIndex;
+  WasDragging := FTabDragActive;
+  ScreenPt := TControl(Sender).LocalToScreen(PointF(X, Y));
+
+  if WasDragging then
+    TThread.Queue(nil,
+      procedure
+      begin
+        if not (csDestroying in ComponentState) then
+          FinishTabDrag(ScreenPt);
+      end)
+  else
+  begin
+    CancelTabDrag;
+    TThread.Queue(nil,
+      procedure
+      begin
+        if not (csDestroying in ComponentState) then
+          ActivateTabIndex(TabIndex);
+      end);
+  end;
+end;
+
+procedure TnbDockingPaneHost.UpdateTabDrag(const AScreenPt: TPointF);
+var
+  LocalPt: TPointF;
+  TargetLeaf: TPaneLeaf;
+  Hit: TDropHitResult;
+begin
+  if (FTabDragIndex < 0) or (FTabDragIndex >= FTabs.Count)
+     or (FDropOverlay = nil) then
+    Exit;
+  if FTabDragIndex = FActiveTabIndex then
+  begin
+    ClearDropOverlay;
+    Exit;
+  end;
+  if FTabs[FTabDragIndex].Tree.LeafCount <> 1 then
+  begin
+    ClearDropOverlay;
+    Exit;
+  end;
+
+  LocalPt := ScreenToLocal(AScreenPt);
+  TargetLeaf := FindLeafAt(LocalPt);
+  if TargetLeaf = nil then
+  begin
+    ClearDropOverlay;
+    FTabDragTargetLeaf := nil;
+    FTabDragHit := NoZone;
+    Exit;
+  end;
+
+  if TargetLeaf <> FTabDragTargetLeaf then
+  begin
+    FTabDragTargetLeaf := TargetLeaf;
+    FDropOverlay.Parent := Self;
+    FDropOverlay.ShowAt(LeafBounds(TargetLeaf));
+  end;
+
+  Hit := FDropOverlay.HitTestZone(LocalPt.X, LocalPt.Y);
+  FTabDragHit := Hit;
+  FDropOverlay.Highlight(Hit);
+end;
+
+procedure TnbDockingPaneHost.FinishTabDrag(const AScreenPt: TPointF);
+var
+  SourceTab: TPaneHostTab;
+  SourceLeaf, TargetLeaf: TPaneLeaf;
+  Content, TargetContent: TnbDockingPaneContent;
+  Hit: TDropHitResult;
+  SourceIndex: Integer;
+begin
+  SourceIndex := FTabDragIndex;
+  TargetLeaf := FTabDragTargetLeaf;
+  Hit := FTabDragHit;
+  CancelTabDrag;
+
+  if (SourceIndex < 0) or (SourceIndex >= FTabs.Count)
+     or (SourceIndex = FActiveTabIndex) or (not Hit.HasZone)
+     or (TargetLeaf = nil) then
+    Exit;
+
+  SourceTab := FTabs[SourceIndex];
+  if SourceTab.Tree.LeafCount <> 1 then Exit;
+  SourceLeaf := SourceTab.Tree.FirstLeaf;
+  if (SourceLeaf = nil) or (SourceLeaf.Content = nil) then Exit;
+
+  TargetContent := TargetLeaf.Content;
+  Content := SourceLeaf.Content;
+  Content.Parent := nil;
+  SourceTab.Tree.Clear;
+
+  FTabs.Delete(SourceIndex);
+  if SourceIndex < FActiveTabIndex then
+    Dec(FActiveTabIndex);
+  FTree := FTabs[FActiveTabIndex].Tree;
+  TargetLeaf := FindLeafByContent(TargetContent);
+  if TargetLeaf = nil then
+  begin
+    AddTabWithContent(Content.Caption, Content);
+    Exit;
+  end;
+
+  FActiveLeaf := TargetLeaf;
+  SplitActive(Hit.Direction, Content);
+  RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.CancelTabDrag;
+begin
+  ClearDropOverlay;
+  FTabDragIndex := -1;
+  FTabDragActive := False;
+  FTabDragTargetLeaf := nil;
+  FTabDragHit := NoZone;
+end;
+
+procedure TnbDockingPaneHost.UpdateTabButtonStates;
+var
+  I: Integer;
+  Btn: TRectangle;
+begin
+  if FTabButtons = nil then Exit;
+  for I := 0 to FTabButtons.Count - 1 do
+  begin
+    Btn := FTabButtons[I];
+    if Btn = nil then Continue;
+    if I = FActiveTabIndex then
+      Btn.Fill.Color := TAlphaColor($FFFFFFFF)
+    else
+      Btn.Fill.Color := TAlphaColor($FFE5E5E5);
+  end;
+end;
+
+procedure TnbDockingPaneHost.RebuildTabButtons;
+var
+  I: Integer;
+  Btn: TRectangle;
+  Txt: TText;
+  BtnWidth, BtnHeight, Pos, BarSize: Single;
+  TextIsVertical: Boolean;
+begin
+  if (FTabBar = nil) or (FTabButtons = nil) or (FTabs = nil) then Exit;
+
+  FTabButtons.Clear;
+  if not FVisibleTabs then Exit;
+
+  BarSize := PANE_TAB_BAR_HEIGHT;
+  Pos := 8;
+  for I := 0 to FTabs.Count - 1 do
+  begin
+    Btn := TRectangle.Create(Self);
+    FTabButtons.Add(Btn);
+    Btn.Parent := FTabBar;
+    Btn.Stored := False;
+    Btn.Locked := True;
+    Btn.Align := TAlignLayout.None;
+    Btn.Tag := I;
+    Btn.HitTest := True;
+    Btn.XRadius := 6;
+    Btn.YRadius := 6;
+    Btn.OnMouseDown := HandleTabButtonMouseDown;
+    Btn.OnMouseMove := HandleTabButtonMouseMove;
+    Btn.OnMouseUp := HandleTabButtonMouseUp;
+    Btn.Stroke.Kind := TBrushKind.Solid;
+    Btn.Stroke.Color := TAlphaColor($553D6FB5);
+    if I = FActiveTabIndex then
+      Btn.Fill.Color := TAlphaColor($FFFFFFFF)
+    else
+      Btn.Fill.Color := TAlphaColor($FFE5E5E5);
+
+    Txt := TText.Create(Self);
+    Txt.Parent := Btn;
+    Txt.Stored := False;
+    Txt.Locked := True;
+    Txt.Align := TAlignLayout.Client;
+    Txt.Text := CaptionForTab(FTabs[I], FTabs[I].Caption);
+    Txt.TextSettings.HorzAlign := TTextAlign.Center;
+    Txt.TextSettings.VertAlign := TTextAlign.Center;
+    Txt.TextSettings.Font.Size := 12;
+    Txt.TextSettings.FontColor := TAlphaColor($FF202020);
+    Txt.HitTest := False;
+
+    TextIsVertical := FTabTextDirection = ttdVertical;
+    if FTabTextDirection = ttdAuto then
+      TextIsVertical := FTabPosition in [dtpLeft, dtpRight];
+    if TextIsVertical then
+      Txt.RotationAngle := -90
+    else
+      Txt.RotationAngle := 0;
+
+    if FTabPosition in [dtpLeft, dtpRight] then
+    begin
+      BtnWidth := BarSize - 8;
+      BtnHeight := 88;
+      Btn.Position.X := 4;
+      Btn.Position.Y := Pos;
+      Pos := Pos + BtnHeight + 6;
+    end
+    else
+    begin
+      BtnWidth := 104;
+      BtnHeight := BarSize - 16;
+      Btn.Position.X := Pos;
+      Btn.Position.Y := 8;
+      Pos := Pos + BtnWidth + 6;
+    end;
+    Btn.Width := BtnWidth;
+    Btn.Height := BtnHeight;
+  end;
+end;
+
+procedure TnbDockingPaneHost.HandleAddButtonClick(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var
+  Content: TnbDockingPaneContent;
+  Caption: string;
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+
+  Content := nil;
+  if Assigned(FOnContentNeeded) then
+    FOnContentNeeded(Self, Content);
+  if Content = nil then
+    Content := CreateDefaultContent;
+
+  Caption := Content.Caption;
+  if Caption = '' then
+    Caption := 'Pane ' + (FTabs.Count + 1).ToString;
+  AddTabWithContent(Caption, Content);
+end;
+
+procedure TnbDockingPaneHost.HandleAddButtonMouseEnter(Sender: TObject);
+begin
+  if FAddButton = nil then Exit;
+  FAddButton.Fill.Kind := TBrushKind.Solid;
+  FAddButton.Fill.Color := TAlphaColor($22000000);
+end;
+
+procedure TnbDockingPaneHost.HandleAddButtonMouseLeave(Sender: TObject);
+begin
+  if FAddButton = nil then Exit;
+  FAddButton.Fill.Kind := TBrushKind.None;
 end;
 
 procedure TnbDockingPaneHost.HandleTreeChanged(Sender: TPaneTree);
@@ -973,6 +1695,8 @@ begin
     FFocusMode := False;
   if not FBuilding then
     RebuildVisualTree;
+  if not FBuilding then
+    RebuildTabButtons;
 end;
 
 procedure TnbDockingPaneHost.SetInitialContent(AContent: TnbDockingPaneContent);
@@ -1080,7 +1804,7 @@ begin
      которая является потомком ToCloseContent. Синхронный Free убьёт
      кнопку, FMX вернётся в TSpeedButton.Click → AV. *)
   if ToCloseContent <> nil then
-    TThread.ForceQueue(nil,
+    TThread.ForceQueue(TThread.CurrentThread,
       procedure
       begin
         ToCloseContent.Free;
@@ -1089,7 +1813,7 @@ begin
   InternalSetActive(FTree.FirstLeaf);
 
   (* Пустое дерево: InternalSetActive вышел рано (nil = nil) — стреляем
-     событием вручную, чтобы TabHost закрыл соответствующий таб. *)
+     событием вручную для внешних подписчиков. *)
   if (FActiveLeaf = nil) and Assigned(FOnActiveLeafChanged) then
     FOnActiveLeafChanged(Self, nil, nil);
 end;
@@ -1208,6 +1932,112 @@ begin
   if FDesignChildrenLayoutMode = AValue then Exit;
   FDesignChildrenLayoutMode := AValue;
   RebuildTreeFromDesignChildren;
+end;
+
+procedure TnbDockingPaneHost.SetVisibleTabs(AValue: Boolean);
+begin
+  if FVisibleTabs = AValue then Exit;
+  FVisibleTabs := AValue;
+  UpdateTabBarChrome;
+end;
+
+procedure TnbDockingPaneHost.SetShowAddButton(AValue: Boolean);
+begin
+  if FShowAddButton = AValue then Exit;
+  FShowAddButton := AValue;
+  UpdateTabBarChrome;
+end;
+
+procedure TnbDockingPaneHost.SetTabPosition(AValue: TnbDockingTabPosition);
+begin
+  if FTabPosition = AValue then Exit;
+  FTabPosition := AValue;
+  UpdateTabBarChrome;
+end;
+
+procedure TnbDockingPaneHost.SetTabTextDirection(
+  AValue: TnbDockingTabTextDirection);
+begin
+  if FTabTextDirection = AValue then Exit;
+  FTabTextDirection := AValue;
+  UpdateTabBarChrome;
+end;
+
+procedure TnbDockingPaneHost.UpdateTabBarChrome;
+var
+  BarSize, BtnSize: Single;
+begin
+  if FTabBar = nil then Exit;
+
+  BarSize := PANE_TAB_BAR_HEIGHT;
+  BtnSize := PANE_TAB_ADD_BUTTON_WIDTH - 10;
+  FTabBar.Visible := FVisibleTabs;
+  Padding.Rect := RectF(0, 0, 0, 0);
+  case FTabPosition of
+    dtpBottom:
+      begin
+        FTabBar.Align := TAlignLayout.None;
+        FTabBar.Position.X := 0;
+        FTabBar.Position.Y := Height - BarSize;
+        FTabBar.Width := Width;
+        FTabBar.Height := BarSize;
+        if FVisibleTabs then
+          Padding.Bottom := BarSize;
+      end;
+    dtpLeft:
+      begin
+        FTabBar.Align := TAlignLayout.None;
+        FTabBar.Position.X := 0;
+        FTabBar.Position.Y := 0;
+        FTabBar.Width := BarSize;
+        FTabBar.Height := Height;
+        if FVisibleTabs then
+          Padding.Left := BarSize;
+      end;
+    dtpRight:
+      begin
+        FTabBar.Align := TAlignLayout.None;
+        FTabBar.Position.X := Width - BarSize;
+        FTabBar.Position.Y := 0;
+        FTabBar.Width := BarSize;
+        FTabBar.Height := Height;
+        if FVisibleTabs then
+          Padding.Right := BarSize;
+      end;
+  else
+    FTabBar.Align := TAlignLayout.None;
+    FTabBar.Position.X := 0;
+    FTabBar.Position.Y := 0;
+    FTabBar.Width := Width;
+    FTabBar.Height := BarSize;
+    if FVisibleTabs then
+      Padding.Top := BarSize;
+  end;
+
+  if FVisibleTabs then
+    FTabBar.BringToFront;
+
+  RebuildTabButtons;
+
+  if FAddButton <> nil then
+  begin
+    FAddButton.Visible := FVisibleTabs and FShowAddButton;
+    FAddButton.Width := BtnSize;
+    FAddButton.Height := BtnSize;
+    if FTabPosition in [dtpLeft, dtpRight] then
+    begin
+      FAddButton.Position.X := (BarSize - BtnSize) / 2;
+      FAddButton.Position.Y := FTabBar.Height - BtnSize - 8;
+    end
+    else
+    begin
+      FAddButton.Position.X := FTabBar.Width - BtnSize - 8;
+      FAddButton.Position.Y := (BarSize - BtnSize) / 2;
+    end;
+    if FAddButton.Visible then
+      FAddButton.BringToFront;
+  end;
+
 end;
 
 procedure TnbDockingPaneHost.SetBackgroundColor(AValue: TAlphaColor);
@@ -1330,6 +2160,7 @@ begin
   end;
 
   FActiveLeaf := ALeaf;
+  SaveActiveTabState;
 
   if (FActiveLeaf <> nil) and (FActiveLeaf.Content <> nil) then
   begin
@@ -1359,13 +2190,29 @@ begin
 end;
 
 procedure TnbDockingPaneHost.DetachAllContents;
+var
+  I: Integer;
+  Tree: TPaneTree;
 begin
-  FTree.EnumerateLeaves(
-    procedure(ALeaf: TPaneLeaf)
+  if (FTabs <> nil) and (FTabs.Count > 0) then
+    for I := 0 to FTabs.Count - 1 do
     begin
-      if (ALeaf.Content <> nil) and (ALeaf.Content.Parent <> nil) then
-        ALeaf.Content.Parent := nil;
-    end);
+      Tree := FTabs[I].Tree;
+      if Tree = nil then Continue;
+      Tree.EnumerateLeaves(
+        procedure(ALeaf: TPaneLeaf)
+        begin
+          if (ALeaf.Content <> nil) and (ALeaf.Content.Parent <> nil) then
+            ALeaf.Content.Parent := nil;
+        end);
+    end
+  else if FTree <> nil then
+    FTree.EnumerateLeaves(
+      procedure(ALeaf: TPaneLeaf)
+      begin
+        if (ALeaf.Content <> nil) and (ALeaf.Content.Parent <> nil) then
+          ALeaf.Content.Parent := nil;
+      end);
 end;
 
 procedure TnbDockingPaneHost.RebuildVisualTree;
@@ -1380,12 +2227,12 @@ begin
 
     FRootLayout.Free;
     FRootLayout := TLayout.Create(Self);
-    FRootLayout.Parent := Self;
+    FRootLayout.Parent := FWorkspaceLayout;
     FRootLayout.Stored := False;
     FRootLayout.Locked := True;
     FRootLayout.Align := TAlignLayout.Client;
     FRootLayout.Visible := True;
-    FRootLayout.HitTest := False;
+    FRootLayout.HitTest := True;
     if FBackgroundRect <> nil then
       FBackgroundRect.SendToBack;
 
