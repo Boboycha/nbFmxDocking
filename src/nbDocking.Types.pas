@@ -22,11 +22,11 @@
 interface
 
 uses
-  System.Classes, System.SysUtils, System.UITypes, System.Types,
+  System.Classes, System.SysUtils, System.JSON, System.UITypes, System.Types,
   System.Generics.Collections,
   System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Edit,
-  FMX.Styles.Objects,
+  FMX.Styles.Objects, FMX.Ani,
   FMX.Objects, FMX.Graphics;
 
 type
@@ -116,10 +116,12 @@ type
     FLocalBorder: TAlphaColor;
     FLocalText: TAlphaColor;
     procedure HandleApplyStyleLookup(Sender: TObject);
-    procedure PaintLocalChrome;
+    procedure HandleLocalMouseEnter(Sender: TObject);
+    procedure HandleLocalMouseLeave(Sender: TObject);
   public
     ActionId: string;
     constructor Create(AOwner: TComponent); override;
+    procedure PaintLocalChrome;
     procedure ApplyLocalChrome(ABg, ABorder, AText: TAlphaColor);
     procedure SetIconName(const AValue: string);
   end;
@@ -301,8 +303,8 @@ implementation
 
 const
   HEADER_HEIGHT       = 32;
-  ACTION_BTN_WIDTH    = 22;
-  ACTION_BTN_SLOT     = 25;   (* ширина кнопки + правый отступ *)
+  ACTION_BTN_WIDTH    = 24;
+  ACTION_BTN_SLOT     = 28;   (* ширина кнопки + правый отступ *)
   CARD_RADIUS         = 0;
   CARD_PADDING_OTHER  = 0;
   CARD_PADDING_BOTTOM = 0;    (* защита скруглённого нижнего угла *)
@@ -313,127 +315,161 @@ type
   (* Cast-наследник для доступа к protected Capture/ReleaseCapture. *)
   TControlAccess = class(TControl);
 
+  TDockIconDef = record
+    Fill: Boolean;
+    Data: string;
+  end;
+
+const
+  DOCK_ICON_DEFS_JSON =
+    '{' +
+    '"plus":{"fill":false,"data":"M 12 5 L 12 19 M 5 12 L 19 12"},' +
+    '"close":{"fill":false,"data":"M 6 6 L 18 18 M 18 6 L 6 18"},' +
+    '"save":{"fill":false,"data":"M 5 4 L 16 4 L 20 8 L 20 19 C 20 19.55 19.55 20 19 20 L 5 20 C 4.45 20 4 19.55 4 19 L 4 5 C 4 4.45 4.45 4 5 4 Z M 8 4 L 8 9.5 L 15 9.5 L 15 4 M 7 20 L 7 13.5 L 17 13.5 L 17 20"},' +
+    '"delete":{"fill":false,"data":"M 4 7 L 20 7 M 9.5 7 L 9.5 5 C 9.5 4.45 9.95 4 10.5 4 L 13.5 4 C 14.05 4 14.5 4.45 14.5 5 L 14.5 7 M 6 7 L 7 19.1 C 7.04 19.6 7.5 20 8 20 L 16 20 C 16.5 20 16.96 19.6 17 19.1 L 18 7 M 10 10.5 L 10 16.5 M 14 10.5 L 14 16.5"},' +
+    '"edit":{"fill":false,"data":"M 4.5 19.5 L 8.7 18.7 L 19 8.4 C 19.65 7.75 19.65 6.7 19 6.05 L 17.95 5 C 17.3 4.35 16.25 4.35 15.6 5 L 5.3 15.3 Z M 14.7 5.9 L 18.1 9.3"},' +
+    '"refresh":{"fill":false,"data":"M 19 7 L 19 12 L 14 12 M 18.1 11.5 A 6.5 6.5 0 1 0 16.6 17.1 M 5 17 L 5 12 L 10 12 M 5.9 12.5 A 6.5 6.5 0 1 0 7.4 6.9"},' +
+    '"copy":{"fill":false,"data":"M 10 9 L 19 9 C 19.55 9 20 9.45 20 10 L 20 19 C 20 19.55 19.55 20 19 20 L 10 20 C 9.45 20 9 19.55 9 19 L 9 10 C 9 9.45 9.45 9 10 9 Z M 5.5 15 L 5 15 C 4.45 15 4 14.55 4 14 L 4 5 C 4 4.45 4.45 4 5 4 L 14 4 C 14.55 4 15 4.45 15 5 L 15 5.5"},' +
+    '"paste":{"fill":false,"data":"M 9.5 3.5 L 14.5 3.5 C 15.05 3.5 15.5 3.95 15.5 4.5 L 15.5 5.5 C 15.5 6.05 15.05 6.5 14.5 6.5 L 9.5 6.5 C 8.95 6.5 8.5 6.05 8.5 5.5 L 8.5 4.5 C 8.5 3.95 8.95 3.5 9.5 3.5 Z M 15.5 5 L 17 5 C 17.55 5 18 5.45 18 6 L 18 19.5 C 18 20.05 17.55 20.5 17 20.5 L 7 20.5 C 6.45 20.5 6 20.05 6 19.5 L 6 6 C 6 5.45 6.45 5 7 5 L 8.5 5"},' +
+    '"download":{"fill":false,"data":"M 12 4 L 12 15.5 M 7 10.5 L 12 15.5 L 17 10.5 M 4 17 L 4 19 C 4 19.55 4.45 20 5 20 L 19 20 C 19.55 20 20 19.55 20 19 L 20 17"},' +
+    '"play":{"fill":true,"data":"M 8.5 5.5 L 19 12 L 8.5 18.5 Z"},' +
+    '"back":{"fill":false,"data":"M 20 12 L 4 12 M 10 6 L 4 12 L 10 18"},' +
+    '"key":{"fill":false,"data":"M 4 11.5 A 3.25 3.25 0 1 0 10.5 11.5 A 3.25 3.25 0 1 0 4 11.5 M 10.5 11.5 L 20 11.5 M 16.5 11.5 L 16.5 15 M 20 11.5 L 20 14.5"},' +
+    '"select":{"fill":false,"data":"M 4.5 12.5 L 9.5 17.5 L 19.5 6.5"},' +
+    '"broadcast":{"fill":false,"data":"M 3 12 A 2 2 0 1 0 7 12 A 2 2 0 1 0 3 12 M 17 5 A 2 2 0 1 0 21 5 A 2 2 0 1 0 17 5 M 17 12 A 2 2 0 1 0 21 12 A 2 2 0 1 0 17 12 M 17 19 A 2 2 0 1 0 21 19 A 2 2 0 1 0 17 19 M 7 12 L 17 12 M 6.8 11.1 L 17.2 5.9 M 6.8 12.9 L 17.2 18.1"},' +
+    '"folder":{"fill":false,"data":"M 4 6 C 4 5.45 4.45 5 5 5 L 9.6 5 L 11.6 7 L 19 7 C 19.55 7 20 7.45 20 8 L 20 18 C 20 18.55 19.55 19 19 19 L 5 19 C 4.45 19 4 18.55 4 18 Z"},' +
+    '"theme":{"fill":false,"data":"M 12 21.5 A 9.5 9.5 0 1 1 21.5 12 C 21.5 13.65 20.15 15 18.5 15 L 16.5 15 C 15.4 15 14.5 15.9 14.5 17 C 14.5 17.5 14.7 17.95 15 18.35 C 15.3 18.75 15.5 19.2 15.5 19.7 C 15.5 20.7 14.7 21.5 13.7 21.5 Z M 12.5 6.5 A 1 1 0 1 0 14.5 6.5 A 1 1 0 1 0 12.5 6.5 M 16.5 10.5 A 1 1 0 1 0 18.5 10.5 A 1 1 0 1 0 16.5 10.5 M 7.5 7.5 A 1 1 0 1 0 9.5 7.5 A 1 1 0 1 0 7.5 7.5 M 5.5 12.5 A 1 1 0 1 0 7.5 12.5 A 1 1 0 1 0 5.5 12.5"},' +
+    '"focus":{"fill":false,"data":"M 5 10 L 5 5 L 10 5 M 14 5 L 19 5 L 19 10 M 19 14 L 19 19 L 14 19 M 10 19 L 5 19 L 5 14"},' +
+    '"scripts":{"fill":false,"data":"M 8 7 L 3.5 12 L 8 17 M 16 7 L 20.5 12 L 16 17 M 13.5 5.5 L 10.5 18.5"}' +
+    '}';
+
+  DOCK_ICON_ALIASES_JSON =
+    '{' +
+    '"add":"plus","create":"plus","plus":"plus","+":"plus",' +
+    '"close":"close","cancel":"close","x":"close",' +
+    '"delete":"delete","edit":"edit","reload":"refresh","refresh":"refresh",' +
+    '"save":"save","copy":"copy","paste":"paste",' +
+    '"import":"download","download":"download","generate":"key","key":"key",' +
+    '"select":"select","back":"back","connect":"play","run":"play","play":"play",' +
+    '"focus":"focus","scripts":"scripts","script":"scripts",' +
+    '"broadcast":"broadcast","b":"broadcast",' +
+    '"sftp":"folder","folder":"folder","s":"folder",' +
+    '"theme":"theme","t":"theme"' +
+    '}';
+
+var
+  GDockIconDefs: TDictionary<string, TDockIconDef>;
+  GDockIconAliases: TDictionary<string, string>;
+
+procedure EnsureDockIconAliases; forward;
+
 function HeaderActionIconFor(const AId, AGlyph: string): string;
 var
-  GlyphText: string;
+  Key, GlyphText: string;
 begin
+  EnsureDockIconAliases;
+  Key := LowerCase(Trim(AId));
+  if (Key <> '') and (GDockIconAliases <> nil)
+     and GDockIconAliases.TryGetValue(Key, Result) then
+    Exit;
+
   GlyphText := Trim(AGlyph);
-  if SameText(AId, 'add') or SameText(AId, 'create') or
-    SameText(GlyphText, 'add') or SameText(GlyphText, 'plus') or
-    (GlyphText = '+') then
-    Exit('plus');
-  if SameText(AId, 'close') or SameText(AId, 'cancel') or
-    SameText(AId, 'delete') or SameText(GlyphText, 'close') or
-    SameText(GlyphText, 'x') then
-    Exit('close');
-  if SameText(AId, 'save') then
-    Exit('save');
-  if SameText(AId, 'copy') then
-    Exit('copy');
-  if SameText(AId, 'paste') then
-    Exit('paste');
-  if SameText(AId, 'import') then
-    Exit('download');
-  if SameText(AId, 'generate') then
-    Exit('key');
-  if SameText(AId, 'select') then
-    Exit('select');
-  if SameText(AId, 'back') then
-    Exit('back');
-  if SameText(AId, 'connect') or SameText(AId, 'run') then
-    Exit('play');
-  if SameText(AId, 'focus') then
-    Exit('focus');
-  if SameText(AId, 'scripts') then
-    Exit('scripts');
-  if SameText(AId, 'broadcast') or SameText(GlyphText, 'broadcast') or
-    SameText(GlyphText, 'B') then
-    Exit('broadcast');
-  if SameText(AId, 'sftp') or SameText(GlyphText, 'sftp') or
-    SameText(GlyphText, 'folder') or SameText(GlyphText, 'S') then
-    Exit('folder');
-  if SameText(AId, 'theme') or SameText(GlyphText, 'theme') or
-    SameText(GlyphText, 'T') then
-    Exit('theme');
-  Result := GlyphText;
+  Key := LowerCase(GlyphText);
+  if (Key <> '') and (GDockIconAliases <> nil)
+     and GDockIconAliases.TryGetValue(Key, Result) then
+    Exit;
+
+  Result := LowerCase(GlyphText);
   if Result = '' then
     Result := 'dot';
+end;
+
+procedure EnsureDockIconAliases;
+var
+  Root: TJSONValue;
+  Obj: TJSONObject;
+  Pair: TJSONPair;
+  I: Integer;
+begin
+  if GDockIconAliases <> nil then Exit;
+
+  GDockIconAliases := TDictionary<string, string>.Create;
+  Root := TJSONObject.ParseJSONValue(DOCK_ICON_ALIASES_JSON);
+  try
+    if not (Root is TJSONObject) then Exit;
+    Obj := TJSONObject(Root);
+
+    for I := 0 to Obj.Count - 1 do
+    begin
+      Pair := Obj.Pairs[I];
+      if (Pair = nil) or (Pair.JsonValue = nil) then
+        Continue;
+      GDockIconAliases.AddOrSetValue(LowerCase(Pair.JsonString.Value),
+        LowerCase(Pair.JsonValue.Value));
+    end;
+  finally
+    Root.Free;
+  end;
+end;
+
+procedure EnsureDockIconDefs;
+var
+  Root: TJSONValue;
+  Obj, IconObj: TJSONObject;
+  Pair: TJSONPair;
+  FillValue, DataValue: TJSONValue;
+  Def: TDockIconDef;
+  I: Integer;
+begin
+  if GDockIconDefs <> nil then Exit;
+
+  GDockIconDefs := TDictionary<string, TDockIconDef>.Create;
+  Root := TJSONObject.ParseJSONValue(DOCK_ICON_DEFS_JSON);
+  try
+    if not (Root is TJSONObject) then Exit;
+    Obj := TJSONObject(Root);
+
+    for I := 0 to Obj.Count - 1 do
+    begin
+      Pair := Obj.Pairs[I];
+      if (Pair = nil) or not (Pair.JsonValue is TJSONObject) then
+        Continue;
+
+      IconObj := TJSONObject(Pair.JsonValue);
+      FillValue := IconObj.GetValue('fill');
+      DataValue := IconObj.GetValue('data');
+      if DataValue = nil then
+        Continue;
+
+      Def.Fill := (FillValue <> nil) and SameText(FillValue.Value, 'true');
+      Def.Data := DataValue.Value;
+      GDockIconDefs.AddOrSetValue(LowerCase(Pair.JsonString.Value), Def);
+    end;
+  finally
+    Root.Free;
+  end;
 end;
 
 procedure BuildDockIconPath(const AName: string; APath: TPathData;
   out AFill: Boolean);
 var
   N: string;
+  Def: TDockIconDef;
 begin
   APath.Clear;
   AFill := False;
   N := LowerCase(Trim(AName));
-  (* Иконки в духе Lucide/Feather: сетка 24x24, скруглённые углы через кривые Безье *)
-  if N = 'plus' then
-    APath.Data := 'M 12 5 L 12 19 M 5 12 L 19 12'
-  else if N = 'close' then
-    APath.Data := 'M 6 6 L 18 18 M 18 6 L 6 18'
-  else if N = 'save' then
-    APath.Data := 'M 5 4 L 16 4 L 20 8 L 20 19 C 20 19.55 19.55 20 19 20 L 5 20 ' +
-      'C 4.45 20 4 19.55 4 19 L 4 5 C 4 4.45 4.45 4 5 4 Z ' +
-      'M 8 4 L 8 9.5 L 15 9.5 L 15 4 M 7 20 L 7 13.5 L 17 13.5 L 17 20'
-  else if N = 'delete' then
-    APath.Data := 'M 4 7 L 20 7 ' +
-      'M 9.5 7 L 9.5 5 C 9.5 4.45 9.95 4 10.5 4 L 13.5 4 C 14.05 4 14.5 4.45 14.5 5 L 14.5 7 ' +
-      'M 6 7 L 7 19.1 C 7.04 19.6 7.5 20 8 20 L 16 20 C 16.5 20 16.96 19.6 17 19.1 L 18 7 ' +
-      'M 10 10.5 L 10 16.5 M 14 10.5 L 14 16.5'
-  else if N = 'copy' then
-    APath.Data := 'M 10 9 L 19 9 C 19.55 9 20 9.45 20 10 L 20 19 C 20 19.55 19.55 20 19 20 L 10 20 ' +
-      'C 9.45 20 9 19.55 9 19 L 9 10 C 9 9.45 9.45 9 10 9 Z ' +
-      'M 5.5 15 L 5 15 C 4.45 15 4 14.55 4 14 L 4 5 C 4 4.45 4.45 4 5 4 L 14 4 C 14.55 4 15 4.45 15 5 L 15 5.5'
-  else if N = 'paste' then
-    APath.Data := 'M 9.5 3.5 L 14.5 3.5 C 15.05 3.5 15.5 3.95 15.5 4.5 L 15.5 5.5 ' +
-      'C 15.5 6.05 15.05 6.5 14.5 6.5 L 9.5 6.5 C 8.95 6.5 8.5 6.05 8.5 5.5 L 8.5 4.5 C 8.5 3.95 8.95 3.5 9.5 3.5 Z ' +
-      'M 15.5 5 L 17 5 C 17.55 5 18 5.45 18 6 L 18 19.5 C 18 20.05 17.55 20.5 17 20.5 L 7 20.5 ' +
-      'C 6.45 20.5 6 20.05 6 19.5 L 6 6 C 6 5.45 6.45 5 7 5 L 8.5 5'
-  else if N = 'download' then
-    APath.Data := 'M 12 4 L 12 15.5 M 7 10.5 L 12 15.5 L 17 10.5 ' +
-      'M 4 17 L 4 19 C 4 19.55 4.45 20 5 20 L 19 20 C 19.55 20 20 19.55 20 19 L 20 17'
-  else if N = 'play' then
+
+  EnsureDockIconDefs;
+  if (GDockIconDefs <> nil) and GDockIconDefs.TryGetValue(N, Def) then
   begin
-    AFill := True;
-    APath.Data := 'M 8.5 5.5 L 19 12 L 8.5 18.5 Z';
-  end
-  else if N = 'back' then
-    APath.Data := 'M 20 12 L 4 12 M 10 6 L 4 12 L 10 18'
-  else if N = 'key' then
-    APath.Data := 'M 4 11.5 A 3.25 3.25 0 1 0 10.5 11.5 A 3.25 3.25 0 1 0 4 11.5 ' +
-      'M 10.5 11.5 L 20 11.5 M 16.5 11.5 L 16.5 15 M 20 11.5 L 20 14.5'
-  else if N = 'select' then
-    APath.Data := 'M 4.5 12.5 L 9.5 17.5 L 19.5 6.5'
-  else if N = 'broadcast' then
-    (* Fan-out "один-ко-многим": узел-источник слева, три ветки к узлам справа *)
-    APath.Data := 'M 3 12 A 2 2 0 1 0 7 12 A 2 2 0 1 0 3 12 ' +
-      'M 17 5 A 2 2 0 1 0 21 5 A 2 2 0 1 0 17 5 ' +
-      'M 17 12 A 2 2 0 1 0 21 12 A 2 2 0 1 0 17 12 ' +
-      'M 17 19 A 2 2 0 1 0 21 19 A 2 2 0 1 0 17 19 ' +
-      'M 7 12 L 17 12 M 6.8 11.1 L 17.2 5.9 M 6.8 12.9 L 17.2 18.1'
-  else if N = 'folder' then
-    APath.Data := 'M 4 6 C 4 5.45 4.45 5 5 5 L 9.6 5 L 11.6 7 L 19 7 C 19.55 7 20 7.45 20 8 ' +
-      'L 20 18 C 20 18.55 19.55 19 19 19 L 5 19 C 4.45 19 4 18.55 4 18 Z'
-  else if N = 'theme' then
-    (* Палитра художника: контур с выемкой под большой палец + 4 лунки краски *)
-    APath.Data := 'M 12 21.5 A 9.5 9.5 0 1 1 21.5 12 C 21.5 13.65 20.15 15 18.5 15 ' +
-      'L 16.5 15 C 15.4 15 14.5 15.9 14.5 17 C 14.5 17.5 14.7 17.95 15 18.35 ' +
-      'C 15.3 18.75 15.5 19.2 15.5 19.7 C 15.5 20.7 14.7 21.5 13.7 21.5 Z ' +
-      'M 12.5 6.5 A 1 1 0 1 0 14.5 6.5 A 1 1 0 1 0 12.5 6.5 ' +
-      'M 16.5 10.5 A 1 1 0 1 0 18.5 10.5 A 1 1 0 1 0 16.5 10.5 ' +
-      'M 7.5 7.5 A 1 1 0 1 0 9.5 7.5 A 1 1 0 1 0 7.5 7.5 ' +
-      'M 5.5 12.5 A 1 1 0 1 0 7.5 12.5 A 1 1 0 1 0 5.5 12.5'
-  else if N = 'focus' then
-    APath.Data := 'M 5 10 L 5 5 L 10 5 M 14 5 L 19 5 L 19 10 M 19 14 L 19 19 L 14 19 M 10 19 L 5 19 L 5 14'
-  else if N = 'scripts' then
-    APath.Data := 'M 8 7 L 3.5 12 L 8 17 M 16 7 L 20.5 12 L 16 17 M 13.5 5.5 L 10.5 18.5'
-  else
-  begin
-    AFill := True;
-    APath.Data := 'M 12 9.5 A 2.5 2.5 0 1 0 12 14.5 A 2.5 2.5 0 1 0 12 9.5';
+    AFill := Def.Fill;
+    APath.Data := Def.Data;
+    Exit;
   end;
+
+  AFill := True;
+  APath.Data := 'M 12 9.5 A 2.5 2.5 0 1 0 12 14.5 A 2.5 2.5 0 1 0 12 9.5';
 end;
 
 function BlendColor(AColor1, AColor2: TAlphaColor;
@@ -599,10 +635,12 @@ begin
   FIcon := TPaneHeaderVectorIcon.Create(Self);
   FIcon.Parent := Self;
   FIcon.Align := TAlignLayout.Client;
-  FIcon.Margins.Rect := RectF(4, 4, 4, 4);
+  FIcon.Margins.Rect := RectF(5, 5, 5, 5);
   FIcon.IconColor := FLocalText;
   FIcon.HitTest := False;
   OnApplyStyleLookup := HandleApplyStyleLookup;
+  OnMouseEnter := HandleLocalMouseEnter;
+  OnMouseLeave := HandleLocalMouseLeave;
 end;
 
 procedure TPaneHeaderActionButton.HandleApplyStyleLookup(Sender: TObject);
@@ -610,31 +648,87 @@ begin
   PaintLocalChrome;
 end;
 
+procedure TPaneHeaderActionButton.HandleLocalMouseEnter(Sender: TObject);
+begin
+  Opacity := 1.0;
+  PaintLocalChrome;
+end;
+
+procedure TPaneHeaderActionButton.HandleLocalMouseLeave(Sender: TObject);
+begin
+  Opacity := 0.72;
+  PaintLocalChrome;
+end;
+
 procedure TPaneHeaderActionButton.PaintLocalChrome;
 var
   Obj: TFmxObject;
   Shape: TShape;
+  HoverBg, HoverBorder: TAlphaColor;
+
+  procedure DisableStyleColorAnimations(AObject: TFmxObject);
+  var
+    I: Integer;
+    Anim: TColorAnimation;
+    Prop: string;
+  begin
+    if AObject = nil then
+      Exit;
+
+    if AObject is TColorAnimation then
+    begin
+      Anim := TColorAnimation(AObject);
+      Prop := LowerCase(Anim.PropertyName);
+      if Prop = 'fill.color' then
+      begin
+        Anim.StartValue := FLocalBg;
+        Anim.StopValue := HoverBg;
+        Anim.Enabled := False;
+      end
+      else if Prop = 'stroke.color' then
+      begin
+        Anim.StartValue := FLocalBorder;
+        Anim.StopValue := HoverBorder;
+        Anim.Enabled := False;
+      end;
+    end;
+
+    for I := 0 to AObject.ChildrenCount - 1 do
+      DisableStyleColorAnimations(AObject.Children[I]);
+  end;
 
   procedure PaintShape(const AName: string);
+  var
+    Bg, Border: TAlphaColor;
   begin
     Obj := FindStyleResource(AName);
     if Obj is TShape then
     begin
       Shape := TShape(Obj);
+      Bg := FLocalBg;
+      Border := FLocalBorder;
+      if Opacity >= 0.99 then
+      begin
+        Bg := HoverBg;
+        Border := HoverBorder;
+      end;
       Shape.Fill.Kind := TBrushKind.Solid;
-      Shape.Fill.Color := FLocalBg;
+      Shape.Fill.Color := Bg;
       Shape.Stroke.Kind := TBrushKind.Solid;
-      Shape.Stroke.Color := FLocalBorder;
+      Shape.Stroke.Color := Border;
     end;
   end;
 
 begin
+  HoverBg := BlendColor(FLocalBg, FLocalText, 0.10);
+  HoverBorder := BlendColor(FLocalBorder, FLocalText, 0.42);
   StyledSettings := StyledSettings - [TStyledSetting.FontColor,
     TStyledSetting.Family, TStyledSetting.Size];
   Text := '';
   TextSettings.FontColor := FLocalText;
   if FIcon <> nil then
     FIcon.IconColor := FLocalText;
+  DisableStyleColorAnimations(ResourceLink);
   PaintShape('background');
   PaintShape('bg');
 end;
@@ -1236,8 +1330,8 @@ begin
     Btn.Locked := True;
     Btn.Align := TAlignLayout.None;
     Btn.Width := ACTION_BTN_WIDTH;
-    Btn.Height := HEADER_HEIGHT - 7;
-    Btn.Margins.Rect := RectF(0, 3, 4, 3);
+    Btn.Height := ACTION_BTN_WIDTH;
+    Btn.Margins.Rect := RectF(0, 2, 4, 2);
     Btn.StyleLookup := ScopedHeaderActionStyle('speedbuttonstyle');
     Btn.SetIconName(HeaderActionIconFor(Action.Id, Action.Glyph));
     Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor];
@@ -1272,9 +1366,9 @@ begin
   for I := 0 to FActionButtons.Count - 1 do
   begin
     FActionButtons[I].Position.X := I * ACTION_BTN_SLOT;
-    FActionButtons[I].Position.Y := 3;
+    FActionButtons[I].Position.Y := (HEADER_HEIGHT - ACTION_BTN_WIDTH) / 2;
     FActionButtons[I].Width := ACTION_BTN_WIDTH;
-    FActionButtons[I].Height := HEADER_HEIGHT - 7;
+    FActionButtons[I].Height := ACTION_BTN_WIDTH;
   end;
   FActionsBar.Width := FActionButtons.Count * ACTION_BTN_SLOT;
 end;
@@ -1310,5 +1404,11 @@ begin
   FFooter.Stroke.Kind := TBrushKind.None;
   FFooter.HitTest := True;
 end;
+
+initialization
+  RegisterFmxClasses([TnbDockingPaneContent, TPaneHeaderActionButton]);
+finalization
+  GDockIconAliases.Free;
+  GDockIconDefs.Free;
 
 end.
