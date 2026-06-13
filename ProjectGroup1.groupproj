@@ -3,9 +3,6 @@
         <ProjectGuid>{12856E0D-AA46-44E0-85E6-B648E30AB458}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
-        <Projects Include="Z:\pr\TerminalTest\src\Project1.dproj">
-            <Dependencies/>
-        </Projects>
         <Projects Include="src\nbFMXDocking.dproj">
             <Dependencies/>
         </Projects>
@@ -20,15 +17,6 @@
             <Default.Personality/>
         </BorlandProject>
     </ProjectExtensions>
-    <Target Name="Project1">
-        <MSBuild Projects="Z:\pr\TerminalTest\src\Project1.dproj"/>
-    </Target>
-    <Target Name="Project1:Clean">
-        <MSBuild Projects="Z:\pr\TerminalTest\src\Project1.dproj" Targets="Clean"/>
-    </Target>
-    <Target Name="Project1:Make">
-        <MSBuild Projects="Z:\pr\TerminalTest\src\Project1.dproj" Targets="Make"/>
-    </Target>
     <Target Name="nbFMXDocking">
         <MSBuild Projects="src\nbFMXDocking.dproj"/>
     </Target>
@@ -48,13 +36,13 @@
         <MSBuild Projects="demo\DockingTest.dproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="Project1;nbFMXDocking;DockingTest"/>
+        <CallTarget Targets="nbFMXDocking;DockingTest"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="Project1:Clean;nbFMXDocking:Clean;DockingTest:Clean"/>
+        <CallTarget Targets="nbFMXDocking:Clean;DockingTest:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="Project1:Make;nbFMXDocking:Make;DockingTest:Make"/>
+        <CallTarget Targets="nbFMXDocking:Make;DockingTest:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

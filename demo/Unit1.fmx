@@ -10,53 +10,51 @@ object Form1: TForm1
   DesignerMasterStyle = 0
   object nbDockingPaneHost1: TnbDockingPaneHost
     Align = Client
+    Padding.Top = 44.000000000000000000
     Size.Width = 579.000000000000000000
     Size.Height = 398.000000000000000000
     Size.PlatformDefault = False
-    TabOrder = 1
+    TabOrder = 2
     BackgroundColor = claNull
     SplitterSize = 4.000000000000000000
     SplitterColor = claNull
     AutoMatchBg = False
+    DesignChildrenOrientation = poVertical
+    VisibleTabs = True
     object nbDockingPaneContent1: TnbDockingPaneContent
-      Align = Left
+      Align = Top
       Fill.Color = xFF2A2A2A
-      Padding.Left = 2.000000000000000000
-      Padding.Top = 2.000000000000000000
-      Padding.Right = 2.000000000000000000
-      Padding.Bottom = 8.000000000000000000
-      Size.Width = 287.500000000000000000
-      Size.Height = 398.000000000000000000
+      Position.Y = 44.000000000000000000
+      Size.Width = 579.000000000000000000
+      Size.Height = 175.000000000000000000
       Size.PlatformDefault = False
-      Stroke.Color = xFFE0E0E0
-      XRadius = 10.000000000000000000
-      YRadius = 10.000000000000000000
+      Stroke.Color = xFF818181
+      Caption = 'Pane 1'
+      MinPaneWidth = 50.000000000000000000
+      MinPaneHeight = 50.000000000000000000
       HeaderActions = <
         item
-          Id = #1058#1077#1084#1072
-          Glyph = 'theme'
-          Hint = #1053#1072#1078#1080#1084#1072#1077#1096#1100', '#1082#1088#1072#1089#1080#1096#1100
-          OnExecute = nbDockingPaneContent1HeaderActions0Execute
-        end
-        item
           Id = 'close'
-          Glyph = 'close'
+          Glyph = 'x'
+          Hint = 'Close'
         end>
     end
     object nbDockingPaneContent2: TnbDockingPaneContent
       Align = Client
       Fill.Color = xFF2A2A2A
-      Padding.Left = 2.000000000000000000
-      Padding.Top = 2.000000000000000000
-      Padding.Right = 2.000000000000000000
-      Padding.Bottom = 8.000000000000000000
-      Size.Width = 287.500000000000000000
-      Size.Height = 398.000000000000000000
+      Size.Width = 579.000000000000000000
+      Size.Height = 175.000000000000000000
       Size.PlatformDefault = False
-      Stroke.Color = xFF767676
-      XRadius = 10.000000000000000000
-      YRadius = 10.000000000000000000
-      HeaderActions = <>
+      Stroke.Color = xFF424242
+      Caption = 'Pane 2'
+      MinPaneWidth = 50.000000000000000000
+      MinPaneHeight = 50.000000000000000000
+      HeaderActions = <
+        item
+          Id = 'close'
+          Glyph = 'x'
+          Hint = 'Close'
+        end>
     end
   end
 end

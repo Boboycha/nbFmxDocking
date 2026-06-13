@@ -39,6 +39,9 @@ type
     AOldLeaf, ANewLeaf: TPaneLeaf) of object;
   TContentHeaderChangeEvent = procedure(Sender: TObject;
     AContent: TnbDockingPaneContent) of object;
+  TPaneHostTabChangeEvent = procedure(Sender: TObject;
+    AOldIndex, ANewIndex: Integer) of object;
+  TPaneHostTabEvent = procedure(Sender: TObject; AIndex: Integer) of object;
   TDesignChildrenLayoutMode = (dlmSplit, dlmAlign);
   TnbDockingTabPosition = (dtpTop, dtpBottom, dtpLeft, dtpRight);
   TnbDockingTabTextDirection = (ttdAuto, ttdHorizontal, ttdVertical);
@@ -88,6 +91,12 @@ type
     FBuilding: Boolean;
     FRebuildingDesignChildren: Boolean;
     FBackgroundColor: TAlphaColor;
+    FTabBarColor: TAlphaColor;
+    FTabActiveColor: TAlphaColor;
+    FTabInactiveColor: TAlphaColor;
+    FTabHoverColor: TAlphaColor;
+    FTabTextColor: TAlphaColor;
+    FAccentColor: TAlphaColor;
     FSplitterSize: Single;
     FSplitterColor: TAlphaColor;
     FSplitterCovers: TList<TRectangle>;
@@ -121,6 +130,8 @@ type
     FOnContentNeeded: TContentFactoryEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
+    FOnActiveTabChanged: TPaneHostTabChangeEvent;
+    FOnTabClosed: TPaneHostTabEvent;
     FOnHeaderDrag: TPaneHeaderDragEvent;
     FFocusMode: Boolean;
 
@@ -147,8 +158,6 @@ type
     function CreateDefaultContent: TnbDockingPaneContent;
     procedure EnsurePrimaryTab;
     procedure SaveActiveTabState;
-    function AddTabWithContent(const ACaption: string;
-      AContent: TnbDockingPaneContent): Integer;
     function CaptionForTab(ATab: TPaneHostTab; const AFallback: string): string;
     procedure UpdateTabCaptionFromTree(ATab: TPaneHostTab);
     procedure ActivateTabIndex(AIndex: Integer);
@@ -162,6 +171,8 @@ type
     procedure HandleTabButtonMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleTabButtonDblClick(Sender: TObject);
+    procedure HandleTabButtonMouseEnter(Sender: TObject);
+    procedure HandleTabButtonMouseLeave(Sender: TObject);
     procedure UpdateTabDrag(const AScreenPt: TPointF);
     procedure FinishTabDrag(const AScreenPt: TPointF);
     procedure CancelTabDrag;
@@ -216,6 +227,12 @@ type
     procedure SetActiveLeaf(AValue: TPaneLeaf);
     procedure SetFocusMode(AValue: Boolean);
     procedure SetBackgroundColor(AValue: TAlphaColor);
+    procedure SetTabBarColor(AValue: TAlphaColor);
+    procedure SetTabActiveColor(AValue: TAlphaColor);
+    procedure SetTabInactiveColor(AValue: TAlphaColor);
+    procedure SetTabHoverColor(AValue: TAlphaColor);
+    procedure SetTabTextColor(AValue: TAlphaColor);
+    procedure SetAccentColor(AValue: TAlphaColor);
     procedure SyncBgFromContent(AContent: TnbDockingPaneContent);
     procedure HandleFocusItemMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
@@ -227,6 +244,7 @@ type
     procedure SetTabPosition(AValue: TnbDockingTabPosition);
     procedure SetTabTextDirection(AValue: TnbDockingTabTextDirection);
     procedure UpdateTabBarChrome;
+    function GetActiveTabIndex: Integer;
   protected
     procedure Loaded; override;
     procedure Resize; override;
@@ -238,6 +256,8 @@ type
 
     procedure SetInitialContent(AContent: TnbDockingPaneContent);
     procedure ReplaceTreeRoot(ANode: TPaneNode; AActiveLeaf: TPaneLeaf = nil);
+    procedure ReplaceTabTree(AIndex: Integer; ANode: TPaneNode;
+      AActiveLeaf: TPaneLeaf = nil);
     function SplitActive(ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent = nil): TPaneLeaf;
     procedure CloseActive;
@@ -258,13 +278,33 @@ type
     function ActiveLeafBounds: TRectF;
     function FindLeafAt(const APt: TPointF): TPaneLeaf;
     function LeafBounds(ALeaf: TPaneLeaf): TRectF;
+    function TabCount: Integer;
+    function AddTab(const ACaption: string = 'New tab'): Integer;
+    function AddTabWithContent(const ACaption: string;
+      AContent: TnbDockingPaneContent): Integer;
+    procedure ActivateTab(AIndex: Integer);
+    procedure CloseTab(AIndex: Integer);
+    function TabCaption(AIndex: Integer): string;
+    function TabTree(AIndex: Integer): TPaneTree;
+    function TabActiveLeaf(AIndex: Integer): TPaneLeaf;
+    function TabActiveContent(AIndex: Integer): TnbDockingPaneContent;
 
     property Tree: TPaneTree read FTree;
     property ActiveLeaf: TPaneLeaf read FActiveLeaf write SetActiveLeaf;
+    property ActiveTabIndex: Integer read GetActiveTabIndex;
     property FocusMode: Boolean read FFocusMode write SetFocusMode;
   published
     property BackgroundColor: TAlphaColor read FBackgroundColor
       write SetBackgroundColor;
+    property TabBarColor: TAlphaColor read FTabBarColor write SetTabBarColor;
+    property TabActiveColor: TAlphaColor read FTabActiveColor
+      write SetTabActiveColor;
+    property TabInactiveColor: TAlphaColor read FTabInactiveColor
+      write SetTabInactiveColor;
+    property TabHoverColor: TAlphaColor read FTabHoverColor
+      write SetTabHoverColor;
+    property TabTextColor: TAlphaColor read FTabTextColor write SetTabTextColor;
+    property AccentColor: TAlphaColor read FAccentColor write SetAccentColor;
     property SplitterSize: Single read FSplitterSize write FSplitterSize;
     property SplitterColor: TAlphaColor read FSplitterColor write FSplitterColor;
     property LeafFrameThickness: Single read FLegacyLeafFrameThickness
@@ -298,6 +338,10 @@ type
       read FOnActiveLeafChanged write FOnActiveLeafChanged;
     property OnContentHeaderChanged: TContentHeaderChangeEvent
       read FOnContentHeaderChanged write FOnContentHeaderChanged;
+    property OnActiveTabChanged: TPaneHostTabChangeEvent
+      read FOnActiveTabChanged write FOnActiveTabChanged;
+    property OnTabClosed: TPaneHostTabEvent read FOnTabClosed
+      write FOnTabClosed;
     property OnHeaderDrag: TPaneHeaderDragEvent read FOnHeaderDrag
       write FOnHeaderDrag;
   end;
@@ -306,6 +350,33 @@ implementation
 
 type
   TControlAccess = class(TControl);
+
+function BlendAlphaColor(A, B: TAlphaColor; AWeight: Single): TAlphaColor;
+var
+  W, IW: Single;
+  AA, AR, AG, AB, BA, BR, BG, BB: Integer;
+  CA, CR, CG, CB: Integer;
+begin
+  if AWeight < 0 then W := 0
+  else if AWeight > 1 then W := 1
+  else W := AWeight;
+  IW := 1 - W;
+
+  AA := (A shr 24) and $FF;
+  AR := (A shr 16) and $FF;
+  AG := (A shr 8) and $FF;
+  AB := A and $FF;
+  BA := (B shr 24) and $FF;
+  BR := (B shr 16) and $FF;
+  BG := (B shr 8) and $FF;
+  BB := B and $FF;
+
+  CA := Round(AA * W + BA * IW);
+  CR := Round(AR * W + BR * IW);
+  CG := Round(AG * W + BG * IW);
+  CB := Round(AB * W + BB * IW);
+  Result := TAlphaColor((CA shl 24) or (CR shl 16) or (CG shl 8) or CB);
+end;
 
 { TSplitterInfo }
 
@@ -351,6 +422,12 @@ begin
   (* Прозрачно по умолчанию — сквозь зазоры виден фон формы-хоста.
      Карточки рисуют свой фон сами. *)
   FBackgroundColor := TAlphaColor(0);
+  FTabBarColor := TAlphaColor($FFE5E5E5);
+  FTabActiveColor := TAlphaColor($FFFFFFFF);
+  FTabInactiveColor := TAlphaColor($FFD0D0D0);
+  FTabHoverColor := TAlphaColor($FFEEEEEE);
+  FTabTextColor := TAlphaColor($FF202020);
+  FAccentColor := TAlphaColor($FF3D6FB5);
   FSplitterSize := 4.0;
   FSplitterColor := TAlphaColor(0);
   FSplitterCovers := TList<TRectangle>.Create;
@@ -380,7 +457,7 @@ begin
   FTabBar.Visible := False;
   FTabBar.HitTest := True;
   FTabBar.Fill.Kind := TBrushKind.Solid;
-  FTabBar.Fill.Color := TAlphaColor($FFE5E5E5);
+  FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Stroke.Kind := TBrushKind.None;
 
   FAddButton := TRectangle.Create(Self);
@@ -409,7 +486,7 @@ begin
   FAddGlyph.TextSettings.VertAlign := TTextAlign.Center;
   FAddGlyph.TextSettings.Font.Family := PANE_TAB_ICON_FONT;
   FAddGlyph.TextSettings.Font.Size := 15;
-  FAddGlyph.TextSettings.FontColor := TAlphaColor($FF202020);
+  FAddGlyph.TextSettings.FontColor := FTabTextColor;
   FAddGlyph.HitTest := False;
 
   FDropOverlay := TDockingDropOverlay.Create(Self);
@@ -1346,7 +1423,7 @@ begin
   if AValue then
   begin
     FTabBar.Stroke.Kind := TBrushKind.Solid;
-    FTabBar.Stroke.Color := TAlphaColor($FF3D6FB5);
+    FTabBar.Stroke.Color := FAccentColor;
     FTabBar.Stroke.Thickness := 2;
   end
   else
@@ -1488,6 +1565,47 @@ begin
   FTabs[FActiveTabIndex].ActiveLeaf := FActiveLeaf;
 end;
 
+function TnbDockingPaneHost.TabCount: Integer;
+begin
+  Result := 0;
+  if FTabs = nil then Exit;
+  if (FTabs.Count = 1) and IsEmptyTab(FTabs[0]) then Exit;
+  Result := FTabs.Count;
+end;
+
+function TnbDockingPaneHost.GetActiveTabIndex: Integer;
+begin
+  if (TabCount = 0) or (FActiveTabIndex < 0)
+     or (FActiveTabIndex >= FTabs.Count) then
+    Result := -1
+  else
+    Result := FActiveTabIndex;
+end;
+
+function TnbDockingPaneHost.AddTab(const ACaption: string): Integer;
+var
+  Tab: TPaneHostTab;
+begin
+  EnsurePrimaryTab;
+
+  if (FTabs.Count = 1) and IsEmptyTab(FTabs[0]) then
+  begin
+    Tab := FTabs[0];
+    Tab.Caption := ACaption;
+    Tab.CustomCaption := ACaption <> '';
+    Result := 0;
+  end
+  else
+  begin
+    Tab := TPaneHostTab.Create(ACaption);
+    Tab.CustomCaption := ACaption <> '';
+    Tab.Tree.OnChanged := HandleTreeChanged;
+    Result := FTabs.Add(Tab);
+  end;
+
+  ActivateTabIndex(Result);
+end;
+
 function TnbDockingPaneHost.AddTabWithContent(const ACaption: string;
   AContent: TnbDockingPaneContent): Integer;
 var
@@ -1525,6 +1643,127 @@ begin
   end
   else
     ActivateTabIndex(Result);
+end;
+
+procedure TnbDockingPaneHost.ActivateTab(AIndex: Integer);
+begin
+  ActivateTabIndex(AIndex);
+end;
+
+procedure TnbDockingPaneHost.CloseTab(AIndex: Integer);
+var
+  Tab: TPaneHostTab;
+  Contents: TList<TnbDockingPaneContent>;
+  NewIndex, ClosedIndex: Integer;
+  Content: TnbDockingPaneContent;
+
+  procedure ReleaseContent(AContent: TnbDockingPaneContent);
+  var
+    QueuedContent: TnbDockingPaneContent;
+    FreeProc: TThreadProcedure;
+  begin
+    if AContent = nil then Exit;
+    AContent.Deactivate;
+    AContent.SetActive(False);
+    UnwireContent(AContent);
+    AContent.Parent := nil;
+    QueuedContent := AContent;
+    FreeProc :=
+      procedure
+      begin
+        QueuedContent.Free;
+      end;
+    TThread.ForceQueue(TThread.CurrentThread, FreeProc);
+  end;
+begin
+  if (FTabs = nil) or (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+
+  ClosedIndex := AIndex;
+  if Assigned(FOnTabClosed) then
+    FOnTabClosed(Self, ClosedIndex);
+
+  Tab := FTabs[AIndex];
+  Contents := TList<TnbDockingPaneContent>.Create;
+  try
+    if (Tab <> nil) and (Tab.Tree <> nil) then
+      Tab.Tree.EnumerateLeaves(
+        procedure(ALeaf: TPaneLeaf)
+        begin
+          if (ALeaf <> nil) and (ALeaf.Content <> nil) then
+            Contents.Add(ALeaf.Content);
+        end);
+    for Content in Contents do
+      ReleaseContent(Content);
+  finally
+    Contents.Free;
+  end;
+
+  if AIndex = FActiveTabIndex then
+  begin
+    FActiveLeaf := nil;
+    FTree := nil;
+    FActiveTabIndex := -1;
+  end
+  else if AIndex < FActiveTabIndex then
+    Dec(FActiveTabIndex);
+
+  FTabs.Delete(AIndex);
+
+  if FTabs.Count = 0 then
+    EnsurePrimaryTab;
+
+  if FActiveTabIndex < 0 then
+  begin
+    if (FTabs.Count = 1) and IsEmptyTab(FTabs[0]) then
+    begin
+      FTree := FTabs[0].Tree;
+      RebuildVisualTree;
+      RebuildTabButtons;
+    end
+    else
+    begin
+      NewIndex := ClosedIndex;
+      if NewIndex >= FTabs.Count then
+        NewIndex := FTabs.Count - 1;
+      ActivateTabIndex(NewIndex);
+    end;
+  end
+  else
+    RebuildTabButtons;
+end;
+
+function TnbDockingPaneHost.TabCaption(AIndex: Integer): string;
+begin
+  Result := '';
+  if (FTabs = nil) or (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+  Result := FTabs[AIndex].Caption;
+end;
+
+function TnbDockingPaneHost.TabTree(AIndex: Integer): TPaneTree;
+begin
+  Result := nil;
+  if (FTabs = nil) or (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+  Result := FTabs[AIndex].Tree;
+end;
+
+function TnbDockingPaneHost.TabActiveLeaf(AIndex: Integer): TPaneLeaf;
+begin
+  Result := nil;
+  if (FTabs = nil) or (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+  Result := FTabs[AIndex].ActiveLeaf;
+  if (Result = nil) and (FTabs[AIndex].Tree <> nil) then
+    Result := FTabs[AIndex].Tree.FirstLeaf;
+end;
+
+function TnbDockingPaneHost.TabActiveContent(
+  AIndex: Integer): TnbDockingPaneContent;
+var
+  Leaf: TPaneLeaf;
+begin
+  Result := nil;
+  Leaf := TabActiveLeaf(AIndex);
+  if Leaf <> nil then
+    Result := Leaf.Content;
 end;
 
 function TnbDockingPaneHost.CaptionForTab(ATab: TPaneHostTab;
@@ -1572,11 +1811,13 @@ end;
 procedure TnbDockingPaneHost.ActivateTabIndex(AIndex: Integer);
 var
   OldLeaf, NewLeaf: TPaneLeaf;
+  OldIndex: Integer;
 begin
   EnsurePrimaryTab;
   if (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
   if AIndex = FActiveTabIndex then Exit;
 
+  OldIndex := FActiveTabIndex;
   OldLeaf := FActiveLeaf;
   if (OldLeaf <> nil) and (OldLeaf.Content <> nil) then
   begin
@@ -1598,6 +1839,9 @@ begin
     UpdateTabButtonStates
   else
     RebuildTabButtons;
+
+  if Assigned(FOnActiveTabChanged) then
+    FOnActiveTabChanged(Self, OldIndex, FActiveTabIndex);
 end;
 
 procedure TnbDockingPaneHost.RemoveActiveTabIfEmpty;
@@ -1673,6 +1917,7 @@ var
   TabIndex: Integer;
   WasDragging: Boolean;
   ScreenPt: TPointF;
+  QueueProc: TThreadProcedure;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   if not (Sender is TControl) then Exit;
@@ -1683,21 +1928,25 @@ begin
   ScreenPt := TControl(Sender).LocalToScreen(PointF(X, Y));
 
   if WasDragging then
-    TThread.Queue(nil,
+  begin
+    QueueProc :=
       procedure
       begin
         if not (csDestroying in ComponentState) then
           FinishTabDrag(ScreenPt);
-      end)
+      end;
+    TThread.Queue(nil, QueueProc);
+  end
   else
   begin
     CancelTabDrag;
-    TThread.Queue(nil,
+    QueueProc :=
       procedure
       begin
         if not (csDestroying in ComponentState) then
           ActivateTabIndex(TabIndex);
-      end);
+      end;
+    TThread.Queue(nil, QueueProc);
   end;
 end;
 
@@ -1735,6 +1984,21 @@ begin
   else
     Tab.Caption := NewCaption;
   RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.HandleTabButtonMouseEnter(Sender: TObject);
+var
+  TabIndex: Integer;
+begin
+  if not (Sender is TRectangle) then Exit;
+  TabIndex := TRectangle(Sender).Tag;
+  if TabIndex = FActiveTabIndex then Exit;
+  TRectangle(Sender).Fill.Color := FTabHoverColor;
+end;
+
+procedure TnbDockingPaneHost.HandleTabButtonMouseLeave(Sender: TObject);
+begin
+  UpdateTabButtonStates;
 end;
 
 procedure TnbDockingPaneHost.UpdateTabDrag(const AScreenPt: TPointF);
@@ -1861,9 +2125,9 @@ begin
     Btn := FTabButtons[I];
     if Btn = nil then Continue;
     if I = FActiveTabIndex then
-      Btn.Fill.Color := TAlphaColor($FFFFFFFF)
+      Btn.Fill.Color := FTabActiveColor
     else
-      Btn.Fill.Color := TAlphaColor($FFE5E5E5);
+      Btn.Fill.Color := FTabInactiveColor;
   end;
 end;
 
@@ -1900,12 +2164,14 @@ begin
     Btn.OnMouseMove := HandleTabButtonMouseMove;
     Btn.OnMouseUp := HandleTabButtonMouseUp;
     Btn.OnDblClick := HandleTabButtonDblClick;
+    Btn.OnMouseEnter := HandleTabButtonMouseEnter;
+    Btn.OnMouseLeave := HandleTabButtonMouseLeave;
     Btn.Stroke.Kind := TBrushKind.Solid;
-    Btn.Stroke.Color := TAlphaColor($553D6FB5);
+    Btn.Stroke.Color := BlendAlphaColor(FAccentColor, FTabBarColor, 0.34);
     if I = FActiveTabIndex then
-      Btn.Fill.Color := TAlphaColor($FFFFFFFF)
+      Btn.Fill.Color := FTabActiveColor
     else
-      Btn.Fill.Color := TAlphaColor($FFE5E5E5);
+      Btn.Fill.Color := FTabInactiveColor;
 
     Txt := TText.Create(Self);
     Txt.Parent := Btn;
@@ -1916,7 +2182,7 @@ begin
     Txt.TextSettings.HorzAlign := TTextAlign.Center;
     Txt.TextSettings.VertAlign := TTextAlign.Center;
     Txt.TextSettings.Font.Size := 12;
-    Txt.TextSettings.FontColor := TAlphaColor($FF202020);
+    Txt.TextSettings.FontColor := FTabTextColor;
     Txt.HitTest := False;
 
     TextIsVertical := FTabTextDirection = ttdVertical;
@@ -1972,7 +2238,7 @@ procedure TnbDockingPaneHost.HandleAddButtonMouseEnter(Sender: TObject);
 begin
   if FAddButton = nil then Exit;
   FAddButton.Fill.Kind := TBrushKind.Solid;
-  FAddButton.Fill.Color := TAlphaColor($22000000);
+  FAddButton.Fill.Color := BlendAlphaColor(FTabHoverColor, FTabBarColor, 0.42);
 end;
 
 procedure TnbDockingPaneHost.HandleAddButtonMouseLeave(Sender: TObject);
@@ -2046,6 +2312,64 @@ begin
   RebuildVisualTree;
 end;
 
+procedure TnbDockingPaneHost.ReplaceTabTree(AIndex: Integer; ANode: TPaneNode;
+  AActiveLeaf: TPaneLeaf);
+
+  procedure WireNode(ANode: TPaneNode);
+  var
+    Split: TPaneSplit;
+    I: Integer;
+  begin
+    if ANode = nil then Exit;
+    if ANode is TPaneLeaf then
+    begin
+      if TPaneLeaf(ANode).Content <> nil then
+      begin
+        TPaneLeaf(ANode).Content.Parent := nil;
+        WireContent(TPaneLeaf(ANode).Content);
+      end;
+      Exit;
+    end;
+
+    Split := ANode.AsSplit;
+    if Split = nil then Exit;
+    for I := 0 to Split.ChildCount - 1 do
+      WireNode(Split.Children[I]);
+  end;
+
+var
+  Tab: TPaneHostTab;
+begin
+  if (FTabs = nil) or (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+
+  Tab := FTabs[AIndex];
+  WireNode(ANode);
+
+  FBuilding := True;
+  try
+    Tab.Tree.SetRootNode(ANode);
+  finally
+    FBuilding := False;
+  end;
+
+  if AActiveLeaf = nil then
+    AActiveLeaf := Tab.Tree.FirstLeaf;
+  Tab.ActiveLeaf := AActiveLeaf;
+  if (Tab.Tree.LeafCount > 1) and (Tab.Caption <> '') then
+    Tab.CustomCaption := True
+  else
+    UpdateTabCaptionFromTree(Tab);
+
+  if AIndex = FActiveTabIndex then
+  begin
+    FTree := Tab.Tree;
+    FActiveLeaf := nil;
+    InternalSetActive(AActiveLeaf);
+    RebuildVisualTree;
+  end;
+  RebuildTabButtons;
+end;
+
 function TnbDockingPaneHost.SplitActive(ADirection: TSplitDirection;
   ANewContent: TnbDockingPaneContent): TPaneLeaf;
 var
@@ -2095,11 +2419,17 @@ procedure TnbDockingPaneHost.CloseActive;
 var
   ToClose: TPaneLeaf;
   ToCloseContent: TnbDockingPaneContent;
+  QueuedContent: TnbDockingPaneContent;
+  FreeProc: TThreadProcedure;
 begin
   if FActiveLeaf = nil then Exit;
   ToClose := FActiveLeaf;
   ToCloseContent := ToClose.Content;
   if (ToCloseContent <> nil) and (not ToCloseContent.CanClose) then Exit;
+
+  if (FTree <> nil) and (FTree.LeafCount <= 1)
+     and Assigned(FOnTabClosed) then
+    FOnTabClosed(Self, FActiveTabIndex);
 
   if ToCloseContent <> nil then
   begin
@@ -2123,11 +2453,15 @@ begin
      которая является потомком ToCloseContent. Синхронный Free убьёт
      кнопку, FMX вернётся в TSpeedButton.Click → AV. *)
   if ToCloseContent <> nil then
-    TThread.ForceQueue(TThread.CurrentThread,
+  begin
+    QueuedContent := ToCloseContent;
+    FreeProc :=
       procedure
       begin
-        ToCloseContent.Free;
-      end);
+        QueuedContent.Free;
+      end;
+    TThread.ForceQueue(TThread.CurrentThread, FreeProc);
+  end;
 
   if FTree <> nil then
     InternalSetActive(FTree.FirstLeaf);
@@ -2295,6 +2629,7 @@ begin
 
   BarSize := PANE_TAB_BAR_HEIGHT;
   BtnSize := PANE_TAB_ADD_BUTTON_WIDTH - 10;
+  FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Visible := FVisibleTabs;
   Padding.Rect := RectF(0, 0, 0, 0);
   case FTabPosition of
@@ -2362,6 +2697,54 @@ begin
       FAddButton.BringToFront;
   end;
 
+  if FAddGlyph <> nil then
+    FAddGlyph.TextSettings.FontColor := FTabTextColor;
+
+end;
+
+procedure TnbDockingPaneHost.SetTabBarColor(AValue: TAlphaColor);
+begin
+  if FTabBarColor = AValue then Exit;
+  FTabBarColor := AValue;
+  if FTabBar <> nil then
+    FTabBar.Fill.Color := FTabBarColor;
+  RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.SetTabActiveColor(AValue: TAlphaColor);
+begin
+  if FTabActiveColor = AValue then Exit;
+  FTabActiveColor := AValue;
+  UpdateTabButtonStates;
+end;
+
+procedure TnbDockingPaneHost.SetTabInactiveColor(AValue: TAlphaColor);
+begin
+  if FTabInactiveColor = AValue then Exit;
+  FTabInactiveColor := AValue;
+  UpdateTabButtonStates;
+end;
+
+procedure TnbDockingPaneHost.SetTabHoverColor(AValue: TAlphaColor);
+begin
+  if FTabHoverColor = AValue then Exit;
+  FTabHoverColor := AValue;
+end;
+
+procedure TnbDockingPaneHost.SetTabTextColor(AValue: TAlphaColor);
+begin
+  if FTabTextColor = AValue then Exit;
+  FTabTextColor := AValue;
+  if FAddGlyph <> nil then
+    FAddGlyph.TextSettings.FontColor := FTabTextColor;
+  RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.SetAccentColor(AValue: TAlphaColor);
+begin
+  if FAccentColor = AValue then Exit;
+  FAccentColor := AValue;
+  RebuildTabButtons;
 end;
 
 procedure TnbDockingPaneHost.SetBackgroundColor(AValue: TAlphaColor);
