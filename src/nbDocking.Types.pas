@@ -229,7 +229,7 @@ type
       const AHint: string = ''): TDockingPaneHeaderAction;
     (* Стандартный close-action ("x" → RequestClose). Конвенция: вызывать
        последним из конструктора потомка, чтобы ✕ был крайним справа. *)
-    function AddDefaultCloseAction: TDockingPaneHeaderAction;
+    function AddDefaultCloseAction(const AHint: string = 'Close'): TDockingPaneHeaderAction;
     procedure RemoveHeaderAction(const AId: string);
     procedure ClearHeaderActions;
     function FindHeaderAction(const AId: string): TDockingPaneHeaderAction;
@@ -1254,17 +1254,11 @@ begin
   RebuildActionButtons;
 end;
 
-function TnbDockingPaneContent.AddDefaultCloseAction: TDockingPaneHeaderAction;
+function TnbDockingPaneContent.AddDefaultCloseAction(const AHint: string): TDockingPaneHeaderAction;
 begin
-  Result := FindHeaderAction('close');
-  if Result = nil then
-    Result := AddHeaderAction('close', 'x', HandleCloseAction, 'Close')
-  else
-  begin
-    Result.Glyph := 'x';
-    Result.Hint := 'Close';
-    Result.OnExecute := HandleCloseAction;
-  end;
+  (* Всегда удаляем и добавляем заново, чтобы ✕ оказался последним *)
+  RemoveHeaderAction('close');
+  Result := AddHeaderAction('close', 'x', HandleCloseAction, AHint);
 end;
 
 procedure TnbDockingPaneContent.RemoveHeaderAction(const AId: string);

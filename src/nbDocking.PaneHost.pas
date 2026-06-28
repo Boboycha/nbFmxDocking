@@ -24,12 +24,15 @@ const
   PANE_TAB_ADD_BUTTON_WIDTH = 34;
   PANE_TAB_DRAG_THRESHOLD = 5;
   PANE_ROOT_DROP_EDGE_SIZE = 32;
+  PANE_TAB_CLOSE_SIZE = 16;
   {$IFDEF LINUX}
   PANE_TAB_ICON_FONT = '';
   PANE_TAB_ICON_ADD = '+';
+  PANE_TAB_ICON_CLOSE = 'x';
   {$ELSE}
   PANE_TAB_ICON_FONT = 'Segoe MDL2 Assets';
   PANE_TAB_ICON_ADD = #$E710;
+  PANE_TAB_ICON_CLOSE = #$E711;
   {$ENDIF}
 
 type
@@ -178,6 +181,10 @@ type
     procedure CancelTabDrag;
     function SplitRoot(ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent): TPaneLeaf;
+    procedure HandleTabCloseButtonMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
+    procedure HandleTabCloseButtonMouseEnter(Sender: TObject);
+    procedure HandleTabCloseButtonMouseLeave(Sender: TObject);
     procedure HandleAddButtonClick(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleAddButtonMouseEnter(Sender: TObject);
@@ -2001,6 +2008,55 @@ begin
   UpdateTabButtonStates;
 end;
 
+procedure TnbDockingPaneHost.HandleTabCloseButtonMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var
+  TabIndex: Integer;
+  AllCanClose: Boolean;
+  ClosingIndex: Integer;
+begin
+  if Button <> TMouseButton.mbLeft then Exit;
+  if not (Sender is TControl) then Exit;
+
+  TabIndex := TControl(Sender).Tag;
+  AllCanClose := True;
+
+  if (FTabs <> nil) and (TabIndex >= 0) and (TabIndex < FTabs.Count) then
+  begin
+    if FTabs[TabIndex].Tree <> nil then
+      FTabs[TabIndex].Tree.EnumerateLeaves(
+        procedure(ALeaf: TPaneLeaf)
+        begin
+          if (ALeaf.Content <> nil) and not ALeaf.Content.CanClose then
+            AllCanClose := False;
+        end);
+  end;
+
+  if not AllCanClose then Exit;
+
+  ClosingIndex := TabIndex;
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      if not (csDestroying in ComponentState) then
+        CloseTab(ClosingIndex);
+    end);
+end;
+
+procedure TnbDockingPaneHost.HandleTabCloseButtonMouseEnter(Sender: TObject);
+begin
+  if not (Sender is TRectangle) then Exit;
+  TRectangle(Sender).Fill.Kind := TBrushKind.Solid;
+  TRectangle(Sender).Fill.Color := BlendAlphaColor(FTabHoverColor,
+    FTabBarColor, 0.30);
+end;
+
+procedure TnbDockingPaneHost.HandleTabCloseButtonMouseLeave(Sender: TObject);
+begin
+  if not (Sender is TRectangle) then Exit;
+  TRectangle(Sender).Fill.Kind := TBrushKind.None;
+end;
+
 procedure TnbDockingPaneHost.UpdateTabDrag(const AScreenPt: TPointF);
 var
   LocalPt: TPointF;
@@ -2136,8 +2192,10 @@ var
   I: Integer;
   Btn: TRectangle;
   Txt: TText;
+  CloseBtn: TRectangle;
+  CloseGlyph: TText;
   BtnWidth, BtnHeight, Pos, BarSize: Single;
-  TextIsVertical: Boolean;
+  TextIsVertical, IsHorizontal: Boolean;
 begin
   if (FTabBar = nil) or (FTabButtons = nil) or (FTabs = nil) then Exit;
 
@@ -2185,6 +2243,8 @@ begin
     Txt.TextSettings.FontColor := FTabTextColor;
     Txt.HitTest := False;
 
+    IsHorizontal := not (FTabPosition in [dtpLeft, dtpRight]);
+
     TextIsVertical := FTabTextDirection = ttdVertical;
     if FTabTextDirection = ttdAuto then
       TextIsVertical := FTabPosition in [dtpLeft, dtpRight];
@@ -2193,7 +2253,9 @@ begin
     else
       Txt.RotationAngle := 0;
 
-    if FTabPosition in [dtpLeft, dtpRight] then
+    if IsHorizontal then
+      Txt.Margins.Right := PANE_TAB_CLOSE_SIZE + 8;
+    if not IsHorizontal then
     begin
       BtnWidth := BarSize - 8;
       BtnHeight := 88;
@@ -2211,6 +2273,42 @@ begin
     end;
     Btn.Width := BtnWidth;
     Btn.Height := BtnHeight;
+
+    (* Кнопка ✕ только для горизонтальных табов *)
+    if IsHorizontal then
+    begin
+      CloseBtn := TRectangle.Create(Self);
+      CloseBtn.Parent := Btn;
+      CloseBtn.Stored := False;
+      CloseBtn.Locked := True;
+      CloseBtn.Align := TAlignLayout.None;
+      CloseBtn.Width := PANE_TAB_CLOSE_SIZE;
+      CloseBtn.Height := PANE_TAB_CLOSE_SIZE;
+      CloseBtn.Position.X := BtnWidth - PANE_TAB_CLOSE_SIZE - 4;
+      CloseBtn.Position.Y := (BtnHeight - PANE_TAB_CLOSE_SIZE) / 2;
+      CloseBtn.Fill.Kind := TBrushKind.None;
+      CloseBtn.Stroke.Kind := TBrushKind.None;
+      CloseBtn.XRadius := 4;
+      CloseBtn.YRadius := 4;
+      CloseBtn.HitTest := True;
+      CloseBtn.Tag := I;
+      CloseBtn.OnMouseDown := HandleTabCloseButtonMouseDown;
+      CloseBtn.OnMouseEnter := HandleTabCloseButtonMouseEnter;
+      CloseBtn.OnMouseLeave := HandleTabCloseButtonMouseLeave;
+
+      CloseGlyph := TText.Create(Self);
+      CloseGlyph.Parent := CloseBtn;
+      CloseGlyph.Stored := False;
+      CloseGlyph.Locked := True;
+      CloseGlyph.Align := TAlignLayout.Client;
+      CloseGlyph.Text := PANE_TAB_ICON_CLOSE;
+      CloseGlyph.TextSettings.HorzAlign := TTextAlign.Center;
+      CloseGlyph.TextSettings.VertAlign := TTextAlign.Center;
+      CloseGlyph.TextSettings.Font.Family := PANE_TAB_ICON_FONT;
+      CloseGlyph.TextSettings.Font.Size := 11;
+      CloseGlyph.TextSettings.FontColor := FTabTextColor;
+      CloseGlyph.HitTest := False;
+    end;
   end;
 end;
 
