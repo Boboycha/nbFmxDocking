@@ -25,6 +25,9 @@ const
   TAB_BUTTON_PADDING          = 11;
   TAB_ADD_BUTTON_WIDTH        = 34;
   TAB_DRAG_THRESHOLD          = 5;
+  (* Высота строки для font size=12. Ограничиваем FCaptionLabel одной строкой,
+     чтобы Pango/Linux не переносил текст при достаточной высоте контейнера. *)
+  TAB_CAPTION_LINE_H          = 18;
   TAB_DROP_INDICATOR_WIDTH    = 2;
   (* Подстраховка против TextLayout.Width = 0 на первой раскладке
      (до того как FMX отрисовал шрифт). ≈ ширина символа при FontSize=13. *)
@@ -479,7 +482,7 @@ begin
   FCaptionLabel.Parent := Self;
   FCaptionLabel.Align := TAlignLayout.None;
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
-  FCaptionLabel.TextSettings.VertAlign := TTextAlign.Center;
+  FCaptionLabel.TextSettings.VertAlign := TTextAlign.Leading;
   FCaptionLabel.TextSettings.Font.Size := 12;
   FCaptionLabel.StyledSettings := [];
   FCaptionLabel.HitTest := False;
@@ -692,9 +695,9 @@ begin
   if FCaptionLabel <> nil then
   begin
     FCaptionLabel.Position.X := LLeft;
-    FCaptionLabel.Position.Y := 0;
+    FCaptionLabel.Position.Y := (Height - TAB_CAPTION_LINE_H) / 2;
     FCaptionLabel.Width := LTextWidth;
-    FCaptionLabel.Height := Height;
+    FCaptionLabel.Height := TAB_CAPTION_LINE_H;
   end;
 
   if FCaptionEdit <> nil then
