@@ -720,7 +720,9 @@ begin
   S := FTab.Caption;
   if FTab.Dirty then
     S := '• ' + S;
-  FCaptionLabel.Text := S;
+  (* Pango на Linux переносит строку после обычного дефиса даже при WordWrap=False.
+     Non-Breaking Hyphen (U+2011) визуально идентичен, но разрыв в нём запрещён. *)
+  FCaptionLabel.Text := S.Replace('-', #$2011);
   Hint := FTab.Caption;
   ShowHint := True;
 
