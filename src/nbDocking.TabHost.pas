@@ -483,6 +483,9 @@ begin
   FCaptionLabel.TextSettings.Font.Size := 12;
   FCaptionLabel.StyledSettings := [];
   FCaptionLabel.HitTest := False;
+  FCaptionLabel.AutoSize := False;
+  FCaptionLabel.WordWrap := False;
+  FCaptionLabel.TextSettings.Trimming := TTextTrimming.Character;
 
   FCaptionEdit := TEdit.Create(Self);
   FCaptionEdit.Parent := Self;
@@ -718,6 +721,8 @@ begin
   if FTab.Dirty then
     S := '• ' + S;
   FCaptionLabel.Text := S;
+  Hint := FTab.Caption;
+  ShowHint := True;
 
   IsGroup := not FTab.IsSingle;
   if FGroupGlyph <> nil then
