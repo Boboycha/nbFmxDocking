@@ -482,13 +482,16 @@ begin
   FCaptionLabel.Parent := Self;
   FCaptionLabel.Align := TAlignLayout.None;
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
-  FCaptionLabel.TextSettings.VertAlign := TTextAlign.Leading;
+  FCaptionLabel.TextSettings.VertAlign := TTextAlign.Center;
   FCaptionLabel.TextSettings.Font.Size := 12;
   FCaptionLabel.StyledSettings := [];
   FCaptionLabel.HitTest := False;
   FCaptionLabel.AutoSize := False;
   FCaptionLabel.WordWrap := False;
-  FCaptionLabel.TextSettings.Trimming := TTextTrimming.Character;
+  (* Trimming=None + WordWrap=False: FMX передаёт в Pango ширину=-1,
+     Pango рендерит одну строку, клипинг родителя обрезает лишнее.
+     При Trimming=Character FMX передаёт реальную ширину → Pango переносит. *)
+  FCaptionLabel.TextSettings.Trimming := TTextTrimming.None;
 
   FCaptionEdit := TEdit.Create(Self);
   FCaptionEdit.Parent := Self;
@@ -695,9 +698,9 @@ begin
   if FCaptionLabel <> nil then
   begin
     FCaptionLabel.Position.X := LLeft;
-    FCaptionLabel.Position.Y := (Height - TAB_CAPTION_LINE_H) / 2;
+    FCaptionLabel.Position.Y := 0;
     FCaptionLabel.Width := LTextWidth;
-    FCaptionLabel.Height := TAB_CAPTION_LINE_H;
+    FCaptionLabel.Height := Height;
   end;
 
   if FCaptionEdit <> nil then
