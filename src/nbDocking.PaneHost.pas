@@ -2722,6 +2722,7 @@ end;
 procedure TnbDockingPaneHost.UpdateTabBarChrome;
 var
   BarSize, BtnSize: Single;
+  NewPadding: TRectF;
 begin
   if FTabBar = nil then Exit;
 
@@ -2729,7 +2730,14 @@ begin
   BtnSize := PANE_TAB_ADD_BUTTON_WIDTH - 10;
   FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Visible := FVisibleTabs;
-  Padding.Rect := RectF(0, 0, 0, 0);
+
+  (* Считаем целевой Padding заранее, не трогая Self.Padding - присваивание
+     Padding триггерит полный realign всего контента активной вкладки
+     (может быть тяжёлым, если там большой список). Раньше здесь сначала
+     обнулялось, а через несколько строк выставлялось обратно - два полных
+     realign'а на КАЖДЫЙ Resize, даже если итоговое значение не менялось
+     (600мс-1.1с на вызов при большом списке в активной вкладке). *)
+  NewPadding := RectF(0, 0, 0, 0);
   case FTabPosition of
     dtpBottom:
       begin
@@ -2739,7 +2747,7 @@ begin
         FTabBar.Width := Width;
         FTabBar.Height := BarSize;
         if FVisibleTabs then
-          Padding.Bottom := BarSize;
+          NewPadding.Bottom := BarSize;
       end;
     dtpLeft:
       begin
@@ -2749,7 +2757,7 @@ begin
         FTabBar.Width := BarSize;
         FTabBar.Height := Height;
         if FVisibleTabs then
-          Padding.Left := BarSize;
+          NewPadding.Left := BarSize;
       end;
     dtpRight:
       begin
@@ -2759,7 +2767,7 @@ begin
         FTabBar.Width := BarSize;
         FTabBar.Height := Height;
         if FVisibleTabs then
-          Padding.Right := BarSize;
+          NewPadding.Right := BarSize;
       end;
   else
     FTabBar.Align := TAlignLayout.None;
@@ -2768,8 +2776,12 @@ begin
     FTabBar.Width := Width;
     FTabBar.Height := BarSize;
     if FVisibleTabs then
-      Padding.Top := BarSize;
+      NewPadding.Top := BarSize;
   end;
+
+  if (Padding.Rect.Left <> NewPadding.Left) or (Padding.Rect.Top <> NewPadding.Top)
+    or (Padding.Rect.Right <> NewPadding.Right) or (Padding.Rect.Bottom <> NewPadding.Bottom) then
+    Padding.Rect := NewPadding;
 
   if FVisibleTabs then
     FTabBar.BringToFront;
