@@ -25,6 +25,9 @@ const
   PANE_TAB_DRAG_THRESHOLD = 5;
   PANE_ROOT_DROP_EDGE_SIZE = 32;
   PANE_TAB_CLOSE_SIZE = 16;
+  PANE_TAB_MIN_WIDTH = 104;
+  PANE_TAB_MAX_WIDTH = 220;
+  PANE_TAB_TEXT_PADDING = 28;
   {$IFDEF LINUX}
   PANE_TAB_ICON_FONT = '';
   PANE_TAB_ICON_ADD = '+';
@@ -107,6 +110,7 @@ type
     FBackgroundRect: TRectangle;
     FSplitterInfos: TObjectList<TSplitterInfo>;
     FDesignSplitters: TObjectList<TSplitter>;
+    FAlignedDesignChildrenReady: Boolean;
     FLegacyLeafFrameThickness: Single;
     FLegacyLeafFrameColor: TAlphaColor;
     FLegacyActiveLeafFrameColor: TAlphaColor;
@@ -135,7 +139,9 @@ type
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
     FOnActiveTabChanged: TPaneHostTabChangeEvent;
     FOnTabClosed: TPaneHostTabEvent;
+    FOnTabInvoked: TPaneHostTabEvent;
     FOnHeaderDrag: TPaneHeaderDragEvent;
+    FOnFocusModeChanged: TNotifyEvent;
     FFocusMode: Boolean;
 
     procedure HandleTreeChanged(Sender: TPaneTree);
@@ -167,6 +173,7 @@ type
     procedure RemoveActiveTabIfEmpty;
     procedure UpdateTabButtonStates;
     procedure RebuildTabButtons;
+    procedure LayoutTabButtons;
     procedure HandleTabButtonMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleTabButtonMouseMove(Sender: TObject; Shift: TShiftState;
@@ -232,6 +239,7 @@ type
     function FindSlotFor(AContainer: TFmxObject; ALeaf: TPaneLeaf): TLayout;
     procedure InternalSetActive(ALeaf: TPaneLeaf);
     procedure SetActiveLeaf(AValue: TPaneLeaf);
+    procedure ValidateFocusMode;
     procedure SetFocusMode(AValue: Boolean);
     procedure SetBackgroundColor(AValue: TAlphaColor);
     procedure SetTabBarColor(AValue: TAlphaColor);
@@ -269,6 +277,7 @@ type
       ANewContent: TnbDockingPaneContent = nil): TPaneLeaf;
     procedure CloseActive;
     procedure ActivateContent(AContent: TnbDockingPaneContent);
+    procedure SetWorkspaceContentVisible(AVisible: Boolean);
     function IsEmpty: Boolean;
 
     (* В отличие от CloseActive — контент НЕ уничтожается, лист удаляется
@@ -349,8 +358,12 @@ type
       read FOnActiveTabChanged write FOnActiveTabChanged;
     property OnTabClosed: TPaneHostTabEvent read FOnTabClosed
       write FOnTabClosed;
+    property OnTabInvoked: TPaneHostTabEvent read FOnTabInvoked
+      write FOnTabInvoked;
     property OnHeaderDrag: TPaneHeaderDragEvent read FOnHeaderDrag
       write FOnHeaderDrag;
+    property OnFocusModeChanged: TNotifyEvent read FOnFocusModeChanged
+      write FOnFocusModeChanged;
   end;
 
 implementation
@@ -537,15 +550,8 @@ end;
 procedure TnbDockingPaneHost.Loaded;
 begin
   inherited;
-  if csDesigning in ComponentState then
-    RebuildTreeFromDesignChildren
-  else
-    TThread.Queue(nil,
-      procedure
-      begin
-        if (not (csDestroying in ComponentState)) and (FTree.Root = nil) then
-          RebuildTreeFromDesignChildren;
-      end);
+  if (csDesigning in ComponentState) or (FTree.Root = nil) then
+    RebuildTreeFromDesignChildren;
 end;
 
 procedure TnbDockingPaneHost.Resize;
@@ -559,6 +565,12 @@ begin
      or (not FAutoBuildDesignChildren)
      or FBuilding
      or FRebuildingDesignChildren then
+    Exit;
+
+
+  if (FDesignChildrenLayoutMode = dlmAlign)
+     and (not (csDesigning in ComponentState))
+     and FAlignedDesignChildrenReady then
     Exit;
 
   if (not (csDesigning in ComponentState)) and (FTree.Root = nil) then
@@ -617,6 +629,11 @@ end;
 
 destructor TnbDockingPaneHost.Destroy;
 begin
+  FOnTabInvoked := nil;
+  FOnFocusModeChanged := nil;
+  FOnHeaderDrag := nil;
+  FOnTabClosed := nil;
+  FOnActiveTabChanged := nil;
   FDesignSplitters.Free;
   FSplitterInfos.Free;
   FSplitterCovers.Free;
@@ -697,6 +714,7 @@ begin
         Exit;
       FTree.Clear;
       FActiveLeaf := nil;
+      FAlignedDesignChildrenReady := False;
       FDesignSplitters.Clear;
       if FTabs.Count > 0 then
       begin
@@ -1063,7 +1081,7 @@ begin
 
     if FBackgroundRect <> nil then
       FBackgroundRect.SendToBack;
-  finally
+    finally
     EndUpdate;
   end;
 end;
@@ -1080,6 +1098,7 @@ var
   I: Integer;
   Content: TnbDockingPaneContent;
 begin
+  FAlignedDesignChildrenReady := False;
   FDesignSplitters.Clear;
   FSplitterInfos.Clear;
   FSplitterCovers.Clear;
@@ -1108,6 +1127,7 @@ begin
     end;
     if FBackgroundRect <> nil then
       FBackgroundRect.SendToBack;
+    FAlignedDesignChildrenReady := True;
   finally
     EndUpdate;
   end;
@@ -1841,6 +1861,7 @@ begin
   if NewLeaf = nil then
     NewLeaf := FTree.FirstLeaf;
   InternalSetActive(NewLeaf);
+  ValidateFocusMode;
   RebuildVisualTree;
   if (FTabButtons <> nil) and (FTabButtons.Count = FTabs.Count) then
     UpdateTabButtonStates
@@ -1924,7 +1945,6 @@ var
   TabIndex: Integer;
   WasDragging: Boolean;
   ScreenPt: TPointF;
-  QueueProc: TThreadProcedure;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   if not (Sender is TControl) then Exit;
@@ -1935,25 +1955,13 @@ begin
   ScreenPt := TControl(Sender).LocalToScreen(PointF(X, Y));
 
   if WasDragging then
-  begin
-    QueueProc :=
-      procedure
-      begin
-        if not (csDestroying in ComponentState) then
-          FinishTabDrag(ScreenPt);
-      end;
-    TThread.Queue(nil, QueueProc);
-  end
+    FinishTabDrag(ScreenPt)
   else
   begin
     CancelTabDrag;
-    QueueProc :=
-      procedure
-      begin
-        if not (csDestroying in ComponentState) then
-          ActivateTabIndex(TabIndex);
-      end;
-    TThread.Queue(nil, QueueProc);
+    if Assigned(FOnTabInvoked) then
+      FOnTabInvoked(Self, TabIndex);
+    ActivateTabIndex(TabIndex);
   end;
 end;
 
@@ -2035,12 +2043,7 @@ begin
   if not AllCanClose then Exit;
 
   ClosingIndex := TabIndex;
-  TThread.ForceQueue(nil,
-    procedure
-    begin
-      if not (csDestroying in ComponentState) then
-        CloseTab(ClosingIndex);
-    end);
+  CloseTab(ClosingIndex);
 end;
 
 procedure TnbDockingPaneHost.HandleTabCloseButtonMouseEnter(Sender: TObject);
@@ -2187,7 +2190,56 @@ begin
   end;
 end;
 
+procedure TnbDockingPaneHost.LayoutTabButtons;
+var
+  I: Integer;
+  Btn: TRectangle;
+  Pos, BarSize: Single;
+begin
+  if (FTabBar = nil) or (FTabButtons = nil) then Exit;
+  if not FVisibleTabs then Exit;
+
+  BarSize := PANE_TAB_BAR_HEIGHT;
+  Pos := 8;
+  for I := 0 to FTabButtons.Count - 1 do
+  begin
+    Btn := FTabButtons[I];
+    if Btn = nil then Continue;
+
+    if FTabPosition in [dtpLeft, dtpRight] then
+    begin
+      Btn.Position.X := 4;
+      Btn.Position.Y := Pos;
+      Pos := Pos + Btn.Height + 6;
+    end
+    else
+    begin
+      Btn.Position.X := Pos;
+      Btn.Position.Y := 8;
+      Btn.Height := BarSize - 16;
+      Pos := Pos + Btn.Width + 6;
+    end;
+  end;
+end;
 procedure TnbDockingPaneHost.RebuildTabButtons;
+
+  function MeasureCaptionWidth(const ACaption: string): Single;
+  var
+    Canvas: TCanvas;
+    SavedFont: TFont;
+  begin
+    Canvas := TCanvasManager.MeasureCanvas;
+    SavedFont := TFont.Create;
+    try
+      SavedFont.Assign(Canvas.Font);
+      Canvas.Font.Size := 12;
+      Result := Canvas.TextWidth(ACaption);
+    finally
+      Canvas.Font.Assign(SavedFont);
+      SavedFont.Free;
+    end;
+  end;
+
 var
   I: Integer;
   Btn: TRectangle;
@@ -2241,6 +2293,8 @@ begin
     Txt.TextSettings.VertAlign := TTextAlign.Center;
     Txt.TextSettings.Font.Size := 12;
     Txt.TextSettings.FontColor := FTabTextColor;
+    Txt.WordWrap := False;
+    Txt.TextSettings.Trimming := TTextTrimming.Character;
     Txt.HitTest := False;
 
     IsHorizontal := not (FTabPosition in [dtpLeft, dtpRight]);
@@ -2265,7 +2319,10 @@ begin
     end
     else
     begin
-      BtnWidth := 104;
+      BtnWidth := EnsureRange(
+        Ceil(MeasureCaptionWidth(Txt.Text)) + PANE_TAB_CLOSE_SIZE +
+          PANE_TAB_TEXT_PADDING,
+        PANE_TAB_MIN_WIDTH, PANE_TAB_MAX_WIDTH);
       BtnHeight := BarSize - 16;
       Btn.Position.X := Pos;
       Btn.Position.Y := 8;
@@ -2347,8 +2404,7 @@ end;
 
 procedure TnbDockingPaneHost.HandleTreeChanged(Sender: TPaneTree);
 begin
-  if FFocusMode and (FTree.LeafCount <= 1) then
-    FFocusMode := False;
+  ValidateFocusMode;
   if not FBuilding then
     RebuildVisualTree;
   if not FBuilding then
@@ -2407,6 +2463,7 @@ begin
   if AActiveLeaf = nil then
     AActiveLeaf := FTree.FirstLeaf;
   InternalSetActive(AActiveLeaf);
+  ValidateFocusMode;
   RebuildVisualTree;
 end;
 
@@ -2578,6 +2635,12 @@ begin
   if Leaf <> nil then InternalSetActive(Leaf);
 end;
 
+procedure TnbDockingPaneHost.SetWorkspaceContentVisible(AVisible: Boolean);
+begin
+  if FWorkspaceLayout <> nil then
+    FWorkspaceLayout.Visible := AVisible;
+end;
+
 function TnbDockingPaneHost.IsEmpty: Boolean;
 begin
   Result := FTree.Root = nil;
@@ -2663,7 +2726,19 @@ begin
   if FFocusMode = AValue then Exit;
 
   FFocusMode := AValue;
+  if Assigned(FOnFocusModeChanged) then
+    FOnFocusModeChanged(Self);
   RebuildVisualTree;
+end;
+
+procedure TnbDockingPaneHost.ValidateFocusMode;
+begin
+  if FFocusMode and ((FTree = nil) or (FTree.LeafCount < 2)) then
+  begin
+    FFocusMode := False;
+    if Assigned(FOnFocusModeChanged) then
+      FOnFocusModeChanged(Self);
+  end;
 end;
 
 procedure TnbDockingPaneHost.SetAutoBuildDesignChildren(AValue: Boolean);
@@ -2786,7 +2861,7 @@ begin
   if FVisibleTabs then
     FTabBar.BringToFront;
 
-  RebuildTabButtons;
+  LayoutTabButtons;
 
   if FAddButton <> nil then
   begin
@@ -3320,7 +3395,7 @@ var
   SplitLayout: TLayout;
   I: Integer;
   ChildAlign: TAlignLayout;
-  AvailableSize, EffectiveSize, ChildSize: Single;
+  AvailableSize, EffectiveSize, ChildSize, PixelScale: Single;
   SplitterCount: Integer;
   Splitter: TSplitter;
   Info: TSplitterInfo;
@@ -3371,6 +3446,12 @@ begin
       ChildSize := ASplit.GetSize(I) * EffectiveSize;
       ChildSize := Max(ChildSize, NodeMinSize(ASplit.Children[I],
         ASplit.Orientation));
+      if ASplit.Orientation = poHorizontal then
+        PixelScale := Abs(SplitLayout.AbsoluteScale.X)
+      else
+        PixelScale := Abs(SplitLayout.AbsoluteScale.Y);
+      if PixelScale > 0 then
+        ChildSize := Round(ChildSize * PixelScale) / PixelScale;
 
       BuildNode(ASplit.Children[I], SplitLayout, ChildAlign, ChildSize);
 
@@ -3440,7 +3521,7 @@ procedure TnbDockingPaneHost.RecalcSplitChildSizes(ASplit: TPaneSplit;
   ASplitLayout: TLayout);
 var
   I: Integer;
-  TotalSize, TotalSplitterSize, EffectiveSize, NewSize: Single;
+  TotalSize, TotalSplitterSize, EffectiveSize, NewSize, PixelScale: Single;
   Obj: TFmxObject;
   PaneVisuals: TList<TFmxObject>;
 begin
@@ -3469,11 +3550,21 @@ begin
       NewSize := ASplit.GetSize(I) * EffectiveSize;
       NewSize := Max(NewSize, NodeMinSize(ASplit.Children[I],
         ASplit.Orientation));
+      if ASplit.Orientation = poHorizontal then
+        PixelScale := Abs(ASplitLayout.AbsoluteScale.X)
+      else
+        PixelScale := Abs(ASplitLayout.AbsoluteScale.Y);
+      if PixelScale > 0 then
+        NewSize := Round(NewSize * PixelScale) / PixelScale;
       if PaneVisuals[I] is TControl then
       begin
         if ASplit.Orientation = poHorizontal then
-          TControl(PaneVisuals[I]).Width := NewSize
-        else
+        begin
+          if not SameValue(TControl(PaneVisuals[I]).Width, NewSize, 0.01) then
+            TControl(PaneVisuals[I]).Width := NewSize;
+        end
+        else if not SameValue(TControl(PaneVisuals[I]).Height,
+          NewSize, 0.01) then
           TControl(PaneVisuals[I]).Height := NewSize;
       end;
     end;
@@ -3539,3 +3630,7 @@ begin
 end;
 
 end.
+
+
+
+

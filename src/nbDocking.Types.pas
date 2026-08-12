@@ -233,6 +233,7 @@ type
     procedure RemoveHeaderAction(const AId: string);
     procedure ClearHeaderActions;
     function FindHeaderAction(const AId: string): TDockingPaneHeaderAction;
+    procedure SetHeaderActionVisual(const AId, AGlyph, AHint: string);
     procedure ExecuteHeaderAction(const AId: string);
 
     procedure BeginRename;
@@ -324,6 +325,8 @@ const
   DOCK_ICON_DEFS_JSON =
     '{' +
     '"plus":{"fill":false,"data":"M 12 5 L 12 19 M 5 12 L 19 12"},' +
+    '"minus":{"fill":false,"data":"M 5 12 L 19 12"},' +
+    '"list":{"fill":false,"data":"M 8 7 L 20 7 M 8 12 L 20 12 M 8 17 L 20 17 M 4 7 L 4.1 7 M 4 12 L 4.1 12 M 4 17 L 4.1 17"},' +
     '"close":{"fill":false,"data":"M 6 6 L 18 18 M 18 6 L 6 18"},' +
     '"save":{"fill":false,"data":"M 5 4 L 16 4 L 20 8 L 20 19 C 20 19.55 19.55 20 19 20 L 5 20 C 4.45 20 4 19.55 4 19 L 4 5 C 4 4.45 4.45 4 5 4 Z M 8 4 L 8 9.5 L 15 9.5 L 15 4 M 7 20 L 7 13.5 L 17 13.5 L 17 20"},' +
     '"delete":{"fill":false,"data":"M 4 7 L 20 7 M 9.5 7 L 9.5 5 C 9.5 4.45 9.95 4 10.5 4 L 13.5 4 C 14.05 4 14.5 4.45 14.5 5 L 14.5 7 M 6 7 L 7 19.1 C 7.04 19.6 7.5 20 8 20 L 16 20 C 16.5 20 16.96 19.6 17 19.1 L 18 7 M 10 10.5 L 10 16.5 M 14 10.5 L 14 16.5"},' +
@@ -340,18 +343,21 @@ const
     '"folder":{"fill":false,"data":"M 4 6 C 4 5.45 4.45 5 5 5 L 9.6 5 L 11.6 7 L 19 7 C 19.55 7 20 7.45 20 8 L 20 18 C 20 18.55 19.55 19 19 19 L 5 19 C 4.45 19 4 18.55 4 18 Z"},' +
     '"theme":{"fill":false,"data":"M 12 21.5 A 9.5 9.5 0 1 1 21.5 12 C 21.5 13.65 20.15 15 18.5 15 L 16.5 15 C 15.4 15 14.5 15.9 14.5 17 C 14.5 17.5 14.7 17.95 15 18.35 C 15.3 18.75 15.5 19.2 15.5 19.7 C 15.5 20.7 14.7 21.5 13.7 21.5 Z M 12.5 6.5 A 1 1 0 1 0 14.5 6.5 A 1 1 0 1 0 12.5 6.5 M 16.5 10.5 A 1 1 0 1 0 18.5 10.5 A 1 1 0 1 0 16.5 10.5 M 7.5 7.5 A 1 1 0 1 0 9.5 7.5 A 1 1 0 1 0 7.5 7.5 M 5.5 12.5 A 1 1 0 1 0 7.5 12.5 A 1 1 0 1 0 5.5 12.5"},' +
     '"focus":{"fill":false,"data":"M 5 10 L 5 5 L 10 5 M 14 5 L 19 5 L 19 10 M 19 14 L 19 19 L 14 19 M 10 19 L 5 19 L 5 14"},' +
+    '"restore":{"fill":false,"data":"M 5 5 L 10 5 L 10 10 M 14 10 L 14 5 L 19 5 M 19 19 L 14 19 L 14 14 M 10 14 L 10 19 L 5 19"},' +
     '"scripts":{"fill":false,"data":"M 8 7 L 3.5 12 L 8 17 M 16 7 L 20.5 12 L 16 17 M 13.5 5.5 L 10.5 18.5"}' +
     '}';
 
   DOCK_ICON_ALIASES_JSON =
     '{' +
     '"add":"plus","create":"plus","plus":"plus","+":"plus",' +
+    '"remove":"minus","collapse":"minus","minus":"minus","-":"minus",' +
+    '"list":"list","table":"list","grid":"list",' +
     '"close":"close","cancel":"close","x":"close",' +
     '"delete":"delete","edit":"edit","reload":"refresh","refresh":"refresh",' +
     '"save":"save","copy":"copy","paste":"paste",' +
     '"import":"download","download":"download","generate":"key","key":"key",' +
     '"select":"select","back":"back","connect":"play","run":"play","play":"play",' +
-    '"focus":"focus","scripts":"scripts","script":"scripts",' +
+    '"focus":"focus","restore":"restore","scripts":"scripts","script":"scripts",' +
     '"broadcast":"broadcast","b":"broadcast",' +
     '"sftp":"folder","folder":"folder","s":"folder",' +
     '"theme":"theme","t":"theme"' +
@@ -368,13 +374,13 @@ var
   Key, GlyphText: string;
 begin
   EnsureDockIconAliases;
-  Key := LowerCase(Trim(AId));
+  GlyphText := Trim(AGlyph);
+  Key := LowerCase(GlyphText);
   if (Key <> '') and (GDockIconAliases <> nil)
      and GDockIconAliases.TryGetValue(Key, Result) then
     Exit;
 
-  GlyphText := Trim(AGlyph);
-  Key := LowerCase(GlyphText);
+  Key := LowerCase(Trim(AId));
   if (Key <> '') and (GDockIconAliases <> nil)
      and GDockIconAliases.TryGetValue(Key, Result) then
     Exit;
@@ -869,6 +875,7 @@ procedure TnbDockingPaneContent.ApplyHeaderColors;
 var
   I: Integer;
   Btn: TPaneHeaderActionButton;
+  HeaderAction: TDockingPaneHeaderAction;
 begin
   Fill.Color := FHeaderBgColor;
   if FHeaderDivider <> nil then
@@ -888,7 +895,11 @@ begin
     Btn := FActionButtons[I];
     Btn.StyleLookup := ScopedHeaderActionStyle('speedbuttonstyle');
     Btn.StyledSettings := Btn.StyledSettings - [TStyledSetting.FontColor];
-    Btn.SetIconName(HeaderActionIconFor(Btn.ActionId, Btn.Text));
+    HeaderAction := FindHeaderAction(Btn.ActionId);
+    if HeaderAction <> nil then
+      Btn.SetIconName(HeaderActionIconFor(HeaderAction.Id, HeaderAction.Glyph))
+    else
+      Btn.SetIconName(HeaderActionIconFor(Btn.ActionId, ''));
     Btn.TextSettings.FontColor := FHeaderTextColor;
     Btn.ApplyLocalChrome(FHeaderBgColor,
       BlendColor(FHeaderBgColor, FHeaderTextColor, 0.22),
@@ -902,8 +913,6 @@ procedure TnbDockingPaneContent.UpdateStrokeForActive;
 begin
   Stroke.Kind := TBrushKind.Solid;
   Stroke.Thickness := STROKE_THICKNESS;
-  Padding.Rect := RectF(CARD_PADDING_OTHER, CARD_PADDING_OTHER,
-    CARD_PADDING_OTHER, CARD_PADDING_OTHER);
   if FActive or FAlwaysShowActive then
   begin
     Stroke.Color := FActiveStrokeColor
@@ -1290,6 +1299,26 @@ begin
   for I := 0 to FHeaderActions.Count - 1 do
     if SameText(FHeaderActions[I].Id, AId) then
       Exit(FHeaderActions[I]);
+end;
+
+procedure TnbDockingPaneContent.SetHeaderActionVisual(
+  const AId, AGlyph, AHint: string);
+var
+  Action: TDockingPaneHeaderAction;
+  Button: TPaneHeaderActionButton;
+begin
+  Action := FindHeaderAction(AId);
+  if Action = nil then Exit;
+  Action.FGlyph := AGlyph;
+  Action.FHint := AHint;
+  for Button in FActionButtons do
+    if SameText(Button.ActionId, AId) then
+    begin
+      Button.SetIconName(HeaderActionIconFor(AId, AGlyph));
+      Button.Hint := AHint;
+      Button.ShowHint := AHint <> '';
+      Exit;
+    end;
 end;
 
 procedure TnbDockingPaneContent.ExecuteHeaderAction(const AId: string);
