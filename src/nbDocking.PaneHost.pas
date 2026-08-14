@@ -48,6 +48,8 @@ type
   TPaneHostTabChangeEvent = procedure(Sender: TObject;
     AOldIndex, ANewIndex: Integer) of object;
   TPaneHostTabEvent = procedure(Sender: TObject; AIndex: Integer) of object;
+  TPaneHostTabContextEvent = procedure(Sender: TObject; AIndex: Integer;
+    const AScreenPoint: TPointF) of object;
   TDesignChildrenLayoutMode = (dlmSplit, dlmAlign);
   TnbDockingTabPosition = (dtpTop, dtpBottom, dtpLeft, dtpRight);
   TnbDockingTabTextDirection = (ttdAuto, ttdHorizontal, ttdVertical);
@@ -140,6 +142,7 @@ type
     FOnActiveTabChanged: TPaneHostTabChangeEvent;
     FOnTabClosed: TPaneHostTabEvent;
     FOnTabInvoked: TPaneHostTabEvent;
+    FOnTabContext: TPaneHostTabContextEvent;
     FOnHeaderDrag: TPaneHeaderDragEvent;
     FOnFocusModeChanged: TNotifyEvent;
     FFocusMode: Boolean;
@@ -360,6 +363,8 @@ type
       write FOnTabClosed;
     property OnTabInvoked: TPaneHostTabEvent read FOnTabInvoked
       write FOnTabInvoked;
+    property OnTabContext: TPaneHostTabContextEvent read FOnTabContext
+      write FOnTabContext;
     property OnHeaderDrag: TPaneHeaderDragEvent read FOnHeaderDrag
       write FOnHeaderDrag;
     property OnFocusModeChanged: TNotifyEvent read FOnFocusModeChanged
@@ -1905,9 +1910,21 @@ end;
 
 procedure TnbDockingPaneHost.HandleTabButtonMouseDown(Sender: TObject;
   Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var
+  TabIndex: Integer;
+  ScreenPoint: TPointF;
 begin
-  if Button <> TMouseButton.mbLeft then Exit;
   if not (Sender is TControl) then Exit;
+  TabIndex := TControl(Sender).Tag;
+  if Button = TMouseButton.mbRight then
+  begin
+    ActivateTabIndex(TabIndex);
+    ScreenPoint := TControl(Sender).LocalToScreen(PointF(X, Y));
+    if Assigned(FOnTabContext) then
+      FOnTabContext(Self, TabIndex, ScreenPoint);
+    Exit;
+  end;
+  if Button <> TMouseButton.mbLeft then Exit;
 
   FTabDragIndex := TControl(Sender).Tag;
   FTabDragStartX := X;
