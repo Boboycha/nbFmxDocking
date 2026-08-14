@@ -2021,7 +2021,7 @@ procedure TnbDockingPaneHost.HandleTabCloseButtonMouseDown(Sender: TObject;
 var
   TabIndex: Integer;
   AllCanClose: Boolean;
-  ClosingIndex: Integer;
+  ClosingTab: TPaneHostTab;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   if not (Sender is TControl) then Exit;
@@ -2042,8 +2042,19 @@ begin
 
   if not AllCanClose then Exit;
 
-  ClosingIndex := TabIndex;
-  CloseTab(ClosingIndex);
+  ClosingTab := FTabs[TabIndex];
+  (* MouseDown belongs to a tab button that CloseTab rebuilds and frees.
+     Defer closing until FMX has returned from the button event. *)
+  TThread.ForceQueue(nil,
+    procedure
+    var
+      ClosingIndex: Integer;
+    begin
+      if (csDestroying in ComponentState) or (FTabs = nil) then Exit;
+      ClosingIndex := FTabs.IndexOf(ClosingTab);
+      if ClosingIndex >= 0 then
+        CloseTab(ClosingIndex);
+    end);
 end;
 
 procedure TnbDockingPaneHost.HandleTabCloseButtonMouseEnter(Sender: TObject);

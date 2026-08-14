@@ -25,7 +25,7 @@ uses
   System.Classes, System.SysUtils, System.JSON, System.UITypes, System.Types,
   System.Generics.Collections,
   System.Math,
-  FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Edit,
+  FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Edit, FMX.ActnList,
   FMX.Styles.Objects, FMX.Ani,
   FMX.Objects, FMX.Graphics;
 
@@ -36,6 +36,7 @@ type
   TPaneResizeSides = set of TPaneResizeSide;
   TPaneHeaderDragPhase = (phdStart, phdMove, phdEnd);
   TPaneHeaderDragState = (hdsIdle, hdsArmed, hdsDragging);
+  TDockingPaneHeaderActionSide = (hasRight, hasLeft);
 
   TnbDockingPaneContent = class;
 
@@ -63,10 +64,14 @@ type
     FId: string;
     FGlyph: string;
     FHint: string;
+    FSide: TDockingPaneHeaderActionSide;
+    FAction: TAction;
     FOnExecute: TPaneHeaderActionEvent;
     procedure SetId(const AValue: string);
     procedure SetGlyph(const AValue: string);
     procedure SetHint(const AValue: string);
+    procedure SetSide(AValue: TDockingPaneHeaderActionSide);
+    procedure SetAction(AValue: TAction);
     procedure SetOnExecute(AValue: TPaneHeaderActionEvent);
   protected
     function GetDisplayName: string; override;
@@ -77,6 +82,8 @@ type
     property Id: string read FId write SetId;
     property Glyph: string read FGlyph write SetGlyph;
     property Hint: string read FHint write SetHint;
+    property Side: TDockingPaneHeaderActionSide read FSide write SetSide default hasRight;
+    property Action: TAction read FAction write SetAction;
     property OnExecute: TPaneHeaderActionEvent read FOnExecute
       write SetOnExecute;
   end;
@@ -132,7 +139,9 @@ type
     FHeaderDivider: TRectangle;
     FCaptionLabel: TLabel;
     FCaptionEdit: TEdit;
+    FLeftActionsBar: TLayout;
     FActionsBar: TLayout;
+    FHeaderContent: TLayout;
     FFooter: TRectangle;
 
     FCaption: string;
@@ -172,6 +181,8 @@ type
     procedure SetMinPaneHeight(AValue: Single);
     procedure SetHeaderActions(AValue: TDockingPaneHeaderActions);
     procedure SetHeaderActionStyleLookupPrefix(const AValue: string);
+    procedure SetHeaderContent(const AValue: TLayout);
+    procedure AttachHeaderContent;
     procedure SetAlwaysShowActive(AValue: Boolean);
     procedure SetCanClose(AValue: Boolean);
     procedure SetShowCloseButton(AValue: Boolean);
@@ -201,6 +212,9 @@ type
       const AActionId: string);
   protected
     procedure DoAddObject(const AObject: TFmxObject); override;
+    procedure Loaded; override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    procedure Resize; override;
 
     (* Переопределить в потомке для реакции на активацию/деактивацию pane.
        Имена с префиксом DoPane*, чтобы не маскировать виртуальные
@@ -286,6 +300,7 @@ type
       write SetHeaderBgColor default TAlphaColor($FF2A2A2A);
     property HeaderTextColor: TAlphaColor read FHeaderTextColor
       write SetHeaderTextColor default TAlphaColor($FFE0E0E0);
+    property HeaderContent: TLayout read FHeaderContent write SetHeaderContent;
     property HeaderActions: TDockingPaneHeaderActions read FHeaderActions
       write SetHeaderActions;
     property OnCloseRequest: TPaneCloseRequestEvent
@@ -326,6 +341,8 @@ const
     '{' +
     '"plus":{"fill":false,"data":"M 12 5 L 12 19 M 5 12 L 19 12"},' +
     '"minus":{"fill":false,"data":"M 5 12 L 19 12"},' +
+    '"up":{"fill":false,"data":"M 12 19 L 12 5 M 6 11 L 12 5 L 18 11"},' +
+    '"down":{"fill":false,"data":"M 12 5 L 12 19 M 6 13 L 12 19 L 18 13"},' +
     '"list":{"fill":false,"data":"M 8 7 L 20 7 M 8 12 L 20 12 M 8 17 L 20 17 M 4 7 L 4.1 7 M 4 12 L 4.1 12 M 4 17 L 4.1 17"},' +
     '"close":{"fill":false,"data":"M 6 6 L 18 18 M 18 6 L 6 18"},' +
     '"save":{"fill":false,"data":"M 5 4 L 16 4 L 20 8 L 20 19 C 20 19.55 19.55 20 19 20 L 5 20 C 4.45 20 4 19.55 4 19 L 4 5 C 4 4.45 4.45 4 5 4 Z M 8 4 L 8 9.5 L 15 9.5 L 15 4 M 7 20 L 7 13.5 L 17 13.5 L 17 20"},' +
@@ -351,6 +368,7 @@ const
     '{' +
     '"add":"plus","create":"plus","plus":"plus","+":"plus",' +
     '"remove":"minus","collapse":"minus","minus":"minus","-":"minus",' +
+    '"up":"up","ascending":"up","down":"down","descending":"down",' +
     '"list":"list","table":"list","grid":"list",' +
     '"close":"close","cancel":"close","x":"close",' +
     '"delete":"delete","edit":"edit","reload":"refresh","refresh":"refresh",' +
@@ -555,6 +573,7 @@ end;
 constructor TDockingPaneHeaderAction.Create(Collection: TCollection);
 begin
   inherited;
+  FSide := hasRight;
 end;
 
 function TDockingPaneHeaderAction.GetDisplayName: string;
@@ -585,6 +604,30 @@ procedure TDockingPaneHeaderAction.SetHint(const AValue: string);
 begin
   if FHint = AValue then Exit;
   FHint := AValue;
+  Changed(False);
+end;
+
+procedure TDockingPaneHeaderAction.SetSide(
+  AValue: TDockingPaneHeaderActionSide);
+begin
+  if FSide = AValue then Exit;
+  FSide := AValue;
+  Changed(False);
+end;
+
+procedure TDockingPaneHeaderAction.SetAction(AValue: TAction);
+var
+  Pane: TnbDockingPaneContent;
+begin
+  if FAction = AValue then Exit;
+  Pane := nil;
+  if (Collection <> nil) and (Collection.Owner is TnbDockingPaneContent) then
+    Pane := TnbDockingPaneContent(Collection.Owner);
+  if (FAction <> nil) and (Pane <> nil) then
+    FAction.RemoveFreeNotification(Pane);
+  FAction := AValue;
+  if (FAction <> nil) and (Pane <> nil) then
+    FAction.FreeNotification(Pane);
   Changed(False);
 end;
 
@@ -813,11 +856,20 @@ begin
   FActionsBar.Width := 0;
   FActionsBar.HitTest := True;
 
+  FLeftActionsBar := TLayout.Create(Self);
+  FLeftActionsBar.Parent := FHeader;
+  FLeftActionsBar.Stored := False;
+  FLeftActionsBar.Locked := True;
+  FLeftActionsBar.Align := TAlignLayout.Left;
+  FLeftActionsBar.Width := 0;
+  FLeftActionsBar.HitTest := True;
+
   FCaptionLabel := TLabel.Create(Self);
   FCaptionLabel.Parent := FHeader;
   FCaptionLabel.Stored := False;
   FCaptionLabel.Locked := True;
-  FCaptionLabel.Align := TAlignLayout.Client;
+  FCaptionLabel.Align := TAlignLayout.Left;
+  FCaptionLabel.Width := 72;
   FCaptionLabel.Margins.Rect := RectF(8, 0, 4, 0);
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
   FCaptionLabel.TextSettings.VertAlign := TTextAlign.Center;
@@ -857,6 +909,40 @@ begin
     FActionButtons[I].Free;
   FActionButtons.Free;
   FHeaderActions.Free;
+  inherited;
+end;
+
+procedure TnbDockingPaneContent.Loaded;
+begin
+  inherited;
+  AttachHeaderContent;
+end;
+
+procedure TnbDockingPaneContent.Notification(AComponent: TComponent;
+  Operation: TOperation);
+var
+  I: Integer;
+  RebuildNeeded: Boolean;
+begin
+  inherited;
+  if Operation <> opRemove then Exit;
+  if AComponent = FHeaderContent then
+    FHeaderContent := nil;
+
+  RebuildNeeded := False;
+  if FHeaderActions <> nil then
+    for I := 0 to FHeaderActions.Count - 1 do
+      if FHeaderActions[I].FAction = AComponent then
+      begin
+        FHeaderActions[I].FAction := nil;
+        RebuildNeeded := True;
+      end;
+  if RebuildNeeded and not (csDestroying in ComponentState) then
+    RebuildActionButtons;
+end;
+
+procedure TnbDockingPaneContent.Resize;
+begin
   inherited;
 end;
 
@@ -955,10 +1041,13 @@ end;
 
 procedure TnbDockingPaneContent.SetHeaderVisible(AValue: Boolean);
 begin
+  if FHeaderContent <> nil then
+  begin
+    FHeaderContent.Visible := AValue;
+    Exit;
+  end;
   if FHeader = nil then Exit;
-  if FHeader.Visible = AValue then Exit;
   FHeader.Visible := AValue;
-  (* Height=0 при скрытии — иначе FMX Align=MostTop может оставить gap. *)
   if AValue then
     FHeader.Height := HEADER_HEIGHT
   else
@@ -967,7 +1056,10 @@ end;
 
 function TnbDockingPaneContent.GetHeaderVisible: Boolean;
 begin
-  Result := (FHeader <> nil) and FHeader.Visible;
+  if FHeaderContent <> nil then
+    Result := FHeaderContent.Visible
+  else
+    Result := (FHeader <> nil) and FHeader.Visible;
 end;
 
 procedure TnbDockingPaneContent.SetMinPaneWidth(AValue: Single);
@@ -1008,6 +1100,50 @@ begin
   ApplyHeaderColors;
 end;
 
+procedure TnbDockingPaneContent.SetHeaderContent(const AValue: TLayout);
+begin
+  if FHeaderContent = AValue then Exit;
+  if FHeaderContent <> nil then
+    FHeaderContent.RemoveFreeNotification(Self);
+  FHeaderContent := AValue;
+  if FHeaderContent <> nil then
+    FHeaderContent.FreeNotification(Self);
+  if not (csLoading in ComponentState) then
+    AttachHeaderContent;
+end;
+
+procedure TnbDockingPaneContent.AttachHeaderContent;
+begin
+  if (FHeaderContent = nil) or (FHeader = nil) then Exit;
+
+  (* HeaderContent remains a normal streamed child of the pane.  Only the
+     built-in caption/actions are moved into it after form loading. *)
+  if FHeaderContent.Parent <> Self then
+    FHeaderContent.Parent := Self;
+  FHeaderContent.Align := TAlignLayout.MostTop;
+  if FHeaderContent.Height <= 0 then
+    FHeaderContent.Height := HEADER_HEIGHT;
+  FHeaderContent.Visible := True;
+  FHeaderContent.HitTest := True;
+  FHeaderContent.OnMouseDown := HandleHeaderMouseDown;
+  FHeaderContent.OnMouseMove := HandleHeaderMouseMove;
+  FHeaderContent.OnMouseUp := HandleHeaderMouseUp;
+  FHeaderContent.OnDblClick := HandleHeaderDblClick;
+
+  FHeader.Visible := False;
+  FHeader.Height := 0;
+  FActionsBar.Parent := FHeaderContent;
+  FActionsBar.Align := TAlignLayout.Right;
+  FCaptionLabel.Parent := FHeaderContent;
+  FCaptionLabel.Align := TAlignLayout.Left;
+  FLeftActionsBar.Parent := FHeaderContent;
+  FLeftActionsBar.Align := TAlignLayout.Left;
+  FCaptionEdit.Parent := FHeaderContent;
+  FCaptionEdit.Align := TAlignLayout.Left;
+  FCaptionEdit.Width := FCaptionLabel.Width;
+  FHeaderDivider.Parent := FHeaderContent;
+  FHeaderDivider.Align := TAlignLayout.Bottom;
+end;
 procedure TnbDockingPaneContent.SetAlwaysShowActive(AValue: Boolean);
 begin
   if FAlwaysShowActive = AValue then Exit;
@@ -1326,7 +1462,9 @@ var
   Action: TDockingPaneHeaderAction;
 begin
   Action := FindHeaderAction(AId);
-  if (Action <> nil) and Assigned(Action.OnExecute) then
+  if (Action <> nil) and (Action.Action <> nil) then
+    Action.Action.ExecuteTarget(Self)
+  else if (Action <> nil) and Assigned(Action.OnExecute) then
     Action.OnExecute(Self, Action.Id)
   else if (Action <> nil) and SameText(Action.Id, 'close') then
     RequestClose;
@@ -1348,7 +1486,10 @@ begin
   begin
     Action := FHeaderActions[I];
     Btn := TPaneHeaderActionButton.Create(Self);
-    Btn.Parent := FActionsBar;
+    if Action.Side = hasLeft then
+      Btn.Parent := FLeftActionsBar
+    else
+      Btn.Parent := FActionsBar;
     Btn.Stored := False;
     Btn.Locked := True;
     Btn.Align := TAlignLayout.None;
@@ -1368,14 +1509,22 @@ begin
     Btn.Opacity := 0.72;
     Btn.HitTest := True;
     Btn.ActionId := Action.Id;
-    Btn.OnClick := HandleActionClick;
+    if Action.Action <> nil then
+    begin
+      Btn.Action := Action.Action;
+      Btn.Text := '';
+    end
+    else
+      Btn.OnClick := HandleActionClick;
     Btn.OnMouseEnter := HandleActionMouseEnter;
     Btn.OnMouseLeave := HandleActionMouseLeave;
     if Action.Hint <> '' then
     begin
       Btn.Hint := Action.Hint;
       Btn.ShowHint := True;
-    end;
+    end
+    else if Action.Action <> nil then
+      Btn.ShowHint := Action.Action.Hint <> '';
     FActionButtons.Add(Btn);
   end;
 
@@ -1384,16 +1533,34 @@ end;
 
 procedure TnbDockingPaneContent.LayoutActionButtons;
 var
-  I: Integer;
+  I, LeftIndex, RightIndex: Integer;
+  ButtonY: Single;
 begin
+  LeftIndex := 0;
+  RightIndex := 0;
+  if FHeaderContent <> nil then
+    ButtonY := (FHeaderContent.Height - ACTION_BTN_WIDTH) / 2
+  else
+    ButtonY := (HEADER_HEIGHT - ACTION_BTN_WIDTH) / 2;
+
   for I := 0 to FActionButtons.Count - 1 do
   begin
-    FActionButtons[I].Position.X := I * ACTION_BTN_SLOT;
-    FActionButtons[I].Position.Y := (HEADER_HEIGHT - ACTION_BTN_WIDTH) / 2;
+    if FHeaderActions[I].Side = hasLeft then
+    begin
+      FActionButtons[I].Position.X := LeftIndex * ACTION_BTN_SLOT;
+      Inc(LeftIndex);
+    end
+    else
+    begin
+      FActionButtons[I].Position.X := RightIndex * ACTION_BTN_SLOT;
+      Inc(RightIndex);
+    end;
+    FActionButtons[I].Position.Y := ButtonY;
     FActionButtons[I].Width := ACTION_BTN_WIDTH;
     FActionButtons[I].Height := ACTION_BTN_WIDTH;
   end;
-  FActionsBar.Width := FActionButtons.Count * ACTION_BTN_SLOT;
+  FLeftActionsBar.Width := LeftIndex * ACTION_BTN_SLOT;
+  FActionsBar.Width := RightIndex * ACTION_BTN_SLOT;
 end;
 
 procedure TnbDockingPaneContent.HandleActionMouseEnter(Sender: TObject);
