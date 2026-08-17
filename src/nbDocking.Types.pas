@@ -143,6 +143,7 @@ type
     FActionsBar: TLayout;
     FHeaderContent: TLayout;
     FFooter: TRectangle;
+    FFooterContent: TLayout;
 
     FCaption: string;
     FHeaderBgColor: TAlphaColor;
@@ -151,6 +152,7 @@ type
     FActiveStrokeColor: TAlphaColor;
     FActive: Boolean;
     FEditingTitle: Boolean;
+    FCaptionEditable: Boolean;
     FHeaderDragEnabled: Boolean;
     FAllowResize: TPaneResizeSides;
     FMinPaneWidth: Single;
@@ -158,6 +160,7 @@ type
     FAlwaysShowActive: Boolean;
     FCanClose: Boolean;
     FShowCloseButton: Boolean;
+    FIncludeInGroupCount: Boolean;
     FDragState: TPaneHeaderDragState;
     FDragStartX, FDragStartY: Single;
 
@@ -183,6 +186,8 @@ type
     procedure SetHeaderActionStyleLookupPrefix(const AValue: string);
     procedure SetHeaderContent(const AValue: TLayout);
     procedure AttachHeaderContent;
+    procedure SetFooterContent(const AValue: TLayout);
+    procedure AttachFooterContent;
     procedure SetAlwaysShowActive(AValue: Boolean);
     procedure SetCanClose(AValue: Boolean);
     procedure SetShowCloseButton(AValue: Boolean);
@@ -282,6 +287,8 @@ type
       read FOnHeaderDrag write FOnHeaderDrag;
   published
     property Caption: string read FCaption write SetCaption;
+    property CaptionEditable: Boolean read FCaptionEditable
+      write FCaptionEditable default True;
     property HeaderVisible: Boolean read GetHeaderVisible write SetHeaderVisible
       default True;
     property HeaderDragEnabled: Boolean read FHeaderDragEnabled
@@ -296,11 +303,14 @@ type
       default True;
     property ShowCloseButton: Boolean read FShowCloseButton
       write SetShowCloseButton default True;
+    property IncludeInGroupCount: Boolean read FIncludeInGroupCount
+      write FIncludeInGroupCount default True;
     property HeaderBgColor: TAlphaColor read FHeaderBgColor
       write SetHeaderBgColor default TAlphaColor($FF2A2A2A);
     property HeaderTextColor: TAlphaColor read FHeaderTextColor
       write SetHeaderTextColor default TAlphaColor($FFE0E0E0);
     property HeaderContent: TLayout read FHeaderContent write SetHeaderContent;
+    property FooterContent: TLayout read FFooterContent write SetFooterContent;
     property HeaderActions: TDockingPaneHeaderActions read FHeaderActions
       write SetHeaderActions;
     property OnCloseRequest: TPaneCloseRequestEvent
@@ -344,6 +354,7 @@ const
     '"up":{"fill":false,"data":"M 12 19 L 12 5 M 6 11 L 12 5 L 18 11"},' +
     '"down":{"fill":false,"data":"M 12 5 L 12 19 M 6 13 L 12 19 L 18 13"},' +
     '"list":{"fill":false,"data":"M 8 7 L 20 7 M 8 12 L 20 12 M 8 17 L 20 17 M 4 7 L 4.1 7 M 4 12 L 4.1 12 M 4 17 L 4.1 17"},' +
+    '"cards":{"fill":false,"data":"M 4 5 L 10 5 L 10 10 L 4 10 Z M 14 5 L 20 5 L 20 10 L 14 10 Z M 4 14 L 10 14 L 10 19 L 4 19 Z M 14 14 L 20 14 L 20 19 L 14 19 Z"},' +
     '"close":{"fill":false,"data":"M 6 6 L 18 18 M 18 6 L 6 18"},' +
     '"save":{"fill":false,"data":"M 5 4 L 16 4 L 20 8 L 20 19 C 20 19.55 19.55 20 19 20 L 5 20 C 4.45 20 4 19.55 4 19 L 4 5 C 4 4.45 4.45 4 5 4 Z M 8 4 L 8 9.5 L 15 9.5 L 15 4 M 7 20 L 7 13.5 L 17 13.5 L 17 20"},' +
     '"delete":{"fill":false,"data":"M 4 7 L 20 7 M 9.5 7 L 9.5 5 C 9.5 4.45 9.95 4 10.5 4 L 13.5 4 C 14.05 4 14.5 4.45 14.5 5 L 14.5 7 M 6 7 L 7 19.1 C 7.04 19.6 7.5 20 8 20 L 16 20 C 16.5 20 16.96 19.6 17 19.1 L 18 7 M 10 10.5 L 10 16.5 M 14 10.5 L 14 16.5"},' +
@@ -369,7 +380,7 @@ const
     '"add":"plus","create":"plus","plus":"plus","+":"plus",' +
     '"remove":"minus","collapse":"minus","minus":"minus","-":"minus",' +
     '"up":"up","ascending":"up","down":"down","descending":"down",' +
-    '"list":"list","table":"list","grid":"list",' +
+    '"list":"list","table":"list","grid":"cards","cards":"cards",' +
     '"close":"close","cancel":"close","x":"close",' +
     '"delete":"delete","edit":"edit","reload":"refresh","refresh":"refresh",' +
     '"save":"save","copy":"copy","paste":"paste",' +
@@ -821,12 +832,14 @@ begin
 
   FHeaderBgColor := TAlphaColor($FF2A2A2A);
   FHeaderTextColor := TAlphaColor($FFE0E0E0);
+  FCaptionEditable := True;
   FHeaderDragEnabled := True;
   FAllowResize := [rsHorizontal, rsVertical];
   FMinPaneWidth := 50;
   FMinPaneHeight := 50;
   FCanClose := True;
   FShowCloseButton := True;
+  FIncludeInGroupCount := True;
 
   FHeaderActions := TDockingPaneHeaderActions.Create(Self);
   FActionButtons := TList<TPaneHeaderActionButton>.Create;
@@ -912,6 +925,7 @@ procedure TnbDockingPaneContent.Loaded;
 begin
   inherited;
   AttachHeaderContent;
+  AttachFooterContent;
 end;
 
 procedure TnbDockingPaneContent.Notification(AComponent: TComponent;
@@ -924,6 +938,8 @@ begin
   if Operation <> opRemove then Exit;
   if AComponent = FHeaderContent then
     FHeaderContent := nil;
+  if AComponent = FFooterContent then
+    FFooterContent := nil;
   if (FActionButtons <> nil) and
      (AComponent is TPaneHeaderActionButton) then
     FActionButtons.Remove(TPaneHeaderActionButton(AComponent));
@@ -1134,6 +1150,7 @@ begin
   FActionsBar.Parent := FHeaderContent;
   FActionsBar.Align := TAlignLayout.Right;
   FCaptionLabel.Parent := FHeaderContent;
+  FCaptionLabel.AutoSize := True;
   FCaptionLabel.Align := TAlignLayout.Left;
   FLeftActionsBar.Parent := FHeaderContent;
   FLeftActionsBar.Align := TAlignLayout.Left;
@@ -1142,6 +1159,31 @@ begin
   FCaptionEdit.Width := FCaptionLabel.Width;
   FHeaderDivider.Parent := FHeaderContent;
   FHeaderDivider.Align := TAlignLayout.Bottom;
+end;
+procedure TnbDockingPaneContent.SetFooterContent(const AValue: TLayout);
+begin
+  if FFooterContent = AValue then Exit;
+  if FFooterContent <> nil then
+    FFooterContent.RemoveFreeNotification(Self);
+  FFooterContent := AValue;
+  if FFooterContent <> nil then
+    FFooterContent.FreeNotification(Self);
+  if not (csLoading in ComponentState) then
+    AttachFooterContent;
+end;
+
+procedure TnbDockingPaneContent.AttachFooterContent;
+begin
+  if FFooterContent = nil then Exit;
+  EnsureFooter;
+  if FFooterContent.Parent <> FFooter then
+    FFooterContent.Parent := FFooter;
+  FFooterContent.Align := TAlignLayout.Client;
+  if FFooterContent.Height <= 0 then
+    FFooterContent.Height := 24;
+  FFooter.Height := FFooterContent.Height;
+  FFooter.Visible := True;
+  FFooterContent.Visible := True;
 end;
 procedure TnbDockingPaneContent.SetAlwaysShowActive(AValue: Boolean);
 begin
@@ -1292,11 +1334,13 @@ end;
 
 procedure TnbDockingPaneContent.HandleHeaderDblClick(Sender: TObject);
 begin
-  BeginRename;
+  if FCaptionEditable then
+    BeginRename;
 end;
 
 procedure TnbDockingPaneContent.BeginRename;
 begin
+  if not FCaptionEditable then Exit;
   if FEditingTitle then Exit;
   FDragState := hdsIdle;
   TControlAccess(FHeader).ReleaseCapture;

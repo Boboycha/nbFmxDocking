@@ -175,6 +175,8 @@ type
     procedure EnsurePrimaryTab;
     procedure SaveActiveTabState;
     function CaptionForTab(ATab: TPaneHostTab; const AFallback: string): string;
+    function CountGroupPanes(ATree: TPaneTree): Integer;
+    function FirstGroupPaneLeaf(ATree: TPaneTree): TPaneLeaf;
     procedure UpdateTabCaptionFromTree(ATab: TPaneHostTab);
     procedure ActivateTabIndex(AIndex: Integer);
     procedure RemoveActiveTabIfEmpty;
@@ -283,6 +285,7 @@ type
       AActiveLeaf: TPaneLeaf = nil);
     function SplitActive(ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent = nil): TPaneLeaf;
+    procedure SetLeafLogicalSize(ALeaf: TPaneLeaf; ASize: Single);
     procedure CloseActive;
     procedure ActivateContent(AContent: TnbDockingPaneContent);
     procedure SetWorkspaceContentVisible(AVisible: Boolean);
@@ -1861,18 +1864,50 @@ begin
     Result := ATab.Caption;
 end;
 
+function TnbDockingPaneHost.CountGroupPanes(ATree: TPaneTree): Integer;
+var
+  Count: Integer;
+begin
+  Count := 0;
+  if ATree <> nil then
+    ATree.EnumerateLeaves(
+      procedure(ALeaf: TPaneLeaf)
+      begin
+        if (ALeaf.Content <> nil) and ALeaf.Content.IncludeInGroupCount then
+          Inc(Count);
+      end);
+  Result := Count;
+end;
+
+function TnbDockingPaneHost.FirstGroupPaneLeaf(ATree: TPaneTree): TPaneLeaf;
+var
+  Found: TPaneLeaf;
+begin
+  Found := nil;
+  if ATree <> nil then
+    ATree.EnumerateLeaves(
+      procedure(ALeaf: TPaneLeaf)
+      begin
+        if (Found = nil) and (ALeaf.Content <> nil)
+           and ALeaf.Content.IncludeInGroupCount then
+          Found := ALeaf;
+      end);
+  Result := Found;
+end;
+
 procedure TnbDockingPaneHost.UpdateTabCaptionFromTree(ATab: TPaneHostTab);
 var
   Leaf: TPaneLeaf;
   CaptionText: string;
-  GroupNo: Integer;
+  GroupNo, PaneCount: Integer;
 begin
   if (ATab = nil) or (ATab.Tree = nil) then Exit;
+  PaneCount := CountGroupPanes(ATab.Tree);
 
-  if ATab.Tree.LeafCount = 1 then
+  if PaneCount = 1 then
   begin
     ATab.CustomCaption := False;
-    Leaf := ATab.Tree.FirstLeaf;
+    Leaf := FirstGroupPaneLeaf(ATab.Tree);
     if (Leaf <> nil) and (Leaf.Content <> nil) then
       ATab.Caption := Leaf.Content.Caption
     else
@@ -1880,7 +1915,7 @@ begin
     Exit;
   end;
 
-  if ATab.Tree.LeafCount > 1 then
+  if PaneCount > 1 then
   begin
     if ATab.CustomCaption and (ATab.Caption <> '') then Exit;
 
@@ -1893,6 +1928,43 @@ begin
 
   ATab.Caption := '';
   ATab.CustomCaption := False;
+end;
+
+procedure TnbDockingPaneHost.SetLeafLogicalSize(ALeaf: TPaneLeaf;
+  ASize: Single);
+var
+  ParentSplit: TPaneSplit;
+  Bounds: TRectF;
+  CurrentShare, ParentExtent, DesiredShare, RemainingShare, Scale: Single;
+  Sizes: TArray<Single>;
+  I, LeafIndex: Integer;
+begin
+  if (ALeaf = nil) or (ALeaf.Parent = nil) or (ASize <= 0) then Exit;
+  ParentSplit := ALeaf.Parent;
+  LeafIndex := ParentSplit.IndexOfChild(ALeaf);
+  if LeafIndex < 0 then Exit;
+
+  CurrentShare := ParentSplit.GetSize(LeafIndex);
+  if CurrentShare <= 0 then Exit;
+  Bounds := LeafBounds(ALeaf);
+  if ParentSplit.Orientation = poHorizontal then
+    ParentExtent := Bounds.Width / CurrentShare
+  else
+    ParentExtent := Bounds.Height / CurrentShare;
+  if ParentExtent <= 0 then Exit;
+
+  DesiredShare := EnsureRange(ASize / ParentExtent, 0.05, 0.45);
+  RemainingShare := 1 - CurrentShare;
+  if RemainingShare <= 0 then Exit;
+  Scale := (1 - DesiredShare) / RemainingShare;
+  SetLength(Sizes, ParentSplit.ChildCount);
+  for I := 0 to ParentSplit.ChildCount - 1 do
+    if I = LeafIndex then
+      Sizes[I] := DesiredShare
+    else
+      Sizes[I] := ParentSplit.GetSize(I) * Scale;
+  ParentSplit.SetSizes(Sizes);
+  RebuildVisualTree;
 end;
 
 procedure TnbDockingPaneHost.ActivateTabIndex(AIndex: Integer);
