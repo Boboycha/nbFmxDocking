@@ -809,8 +809,9 @@ begin
      по краям) + цветной Stroke (индикатор активности). *)
   Align := TAlignLayout.Client;
   HitTest := True;
-  XRadius := 0;
-  YRadius := 0;
+  Margins.Rect := RectF(3, 3, 3, 3);
+  XRadius := 4;
+  YRadius := 4;
   Padding.Rect := RectF(CARD_PADDING_OTHER, CARD_PADDING_OTHER,
                         CARD_PADDING_OTHER, CARD_PADDING_BOTTOM);
   Fill.Kind := TBrushKind.Solid;
@@ -868,8 +869,7 @@ begin
   FCaptionLabel.Parent := FHeader;
   FCaptionLabel.Stored := False;
   FCaptionLabel.Locked := True;
-  FCaptionLabel.Align := TAlignLayout.Left;
-  FCaptionLabel.Width := 72;
+  FCaptionLabel.Align := TAlignLayout.Client;
   FCaptionLabel.Margins.Rect := RectF(8, 0, 4, 0);
   FCaptionLabel.TextSettings.HorzAlign := TTextAlign.Leading;
   FCaptionLabel.TextSettings.VertAlign := TTextAlign.Center;
@@ -902,13 +902,9 @@ begin
 end;
 
 destructor TnbDockingPaneContent.Destroy;
-var
-  I: Integer;
 begin
-  for I := FActionButtons.Count - 1 downto 0 do
-    FActionButtons[I].Free;
-  FActionButtons.Free;
-  FHeaderActions.Free;
+  FreeAndNil(FActionButtons);
+  FreeAndNil(FHeaderActions);
   inherited;
 end;
 
@@ -928,6 +924,9 @@ begin
   if Operation <> opRemove then Exit;
   if AComponent = FHeaderContent then
     FHeaderContent := nil;
+  if (FActionButtons <> nil) and
+     (AComponent is TPaneHeaderActionButton) then
+    FActionButtons.Remove(TPaneHeaderActionButton(AComponent));
 
   RebuildNeeded := False;
   if FHeaderActions <> nil then

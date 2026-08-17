@@ -40,6 +40,7 @@ contains
   nbDocking.PaneHost in 'nbDocking.PaneHost.pas',
   nbDocking.DropOverlay in 'nbDocking.DropOverlay.pas',
   nbDocking.TabHost in 'nbDocking.TabHost.pas',
+  nbDocking.WindowTitleBar in 'nbDocking.WindowTitleBar.pas',
   nbDocking.Demo in 'nbDocking.Demo.pas',
   nbDocking.DesignEditors in 'nbDocking.DesignEditors.pas',
   Reg_nbFMXDocking in 'Reg_nbFMXDocking.pas';

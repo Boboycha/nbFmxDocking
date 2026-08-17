@@ -1,0 +1,171 @@
+﻿object WindowTitleBarSmokeForm: TWindowTitleBarSmokeForm
+  Left = 0
+  Top = 0
+  Caption = 'Window Title Bar Smoke'
+  ClientHeight = 560
+  ClientWidth = 900
+  Fill.Color = xFF111827
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  DesignerMasterStyle = 0
+  object RootLayout: TLayout
+    Align = Client
+    Size.Width = 900.000000000000000000
+    Size.Height = 560.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 0
+    object TitleBarLayout: TLayout
+      Align = Top
+      Size.Width = 900.000000000000000000
+      Size.Height = 44.000000000000000000
+      Size.PlatformDefault = False
+      object TitleBackground: TRectangle
+        Align = Contents
+        HitTest = False
+        Fill.Color = xFF1F2937
+        Size.Width = 900.000000000000000000
+        Size.Height = 44.000000000000000000
+        Size.PlatformDefault = False
+        Stroke.Kind = None
+      end
+      object BrandLabel: TLabel
+        Align = Left
+        HitTest = False
+        Margins.Left = 12.000000000000000000
+        Size.Width = 104.000000000000000000
+        Size.Height = 44.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'nbMarkaz'
+        TextSettings.Font.Size = 16.000000000000000000
+        TextSettings.FontColor = xFF34D399
+      end
+      object DocumentOneButton: TButton
+        Align = Left
+        Margins.Left = 6.000000000000000000
+        Margins.Top = 6.000000000000000000
+        Margins.Bottom = 6.000000000000000000
+        Position.X = 122.000000000000000000
+        Position.Y = 6.000000000000000000
+        Size.Width = 126.000000000000000000
+        Size.Height = 32.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 0
+        Text = 'Server document'
+        OnClick = DocumentButtonClick
+      end
+      object DocumentGroupButton: TButton
+        Align = Left
+        Margins.Left = 6.000000000000000000
+        Margins.Top = 6.000000000000000000
+        Margins.Bottom = 6.000000000000000000
+        Position.X = 254.000000000000000000
+        Position.Y = 6.000000000000000000
+        Size.Width = 100.000000000000000000
+        Size.Height = 32.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 1
+        Text = 'Group 1'
+        OnClick = DocumentButtonClick
+      end
+      object WindowButtonsLayout: TLayout
+        Align = Right
+        Position.X = 756.000000000000000000
+        Size.Width = 144.000000000000000000
+        Size.Height = 44.000000000000000000
+        Size.PlatformDefault = False
+        object MinimizeButton: TButton
+          Align = Left
+          Size.Width = 48.000000000000000000
+          Size.Height = 44.000000000000000000
+          Size.PlatformDefault = False
+          TabOrder = 0
+          Text = #8722
+          TextSettings.Font.Size = 18.000000000000000000
+        end
+        object MaximizeButton: TButton
+          Align = Left
+          Position.X = 48.000000000000000000
+          Size.Width = 48.000000000000000000
+          Size.Height = 44.000000000000000000
+          Size.PlatformDefault = False
+          TabOrder = 1
+          Text = #9633
+          TextSettings.Font.Size = 15.000000000000000000
+        end
+        object CloseButton: TButton
+          Align = Client
+          Position.X = 96.000000000000000000
+          Size.Width = 48.000000000000000000
+          Size.Height = 44.000000000000000000
+          Size.PlatformDefault = False
+          TabOrder = 2
+          Text = #215
+          TextSettings.Font.Size = 20.000000000000000000
+        end
+      end
+    end
+    object ContentLayout: TLayout
+      Align = Client
+      Padding.Left = 28.000000000000000000
+      Padding.Top = 28.000000000000000000
+      Padding.Right = 28.000000000000000000
+      Padding.Bottom = 28.000000000000000000
+      Position.Y = 44.000000000000000000
+      Size.Width = 900.000000000000000000
+      Size.Height = 516.000000000000000000
+      Size.PlatformDefault = False
+      object HeadingLabel: TLabel
+        Align = Top
+        StyledSettings = [Family, Style]
+        Size.Width = 844.000000000000000000
+        Size.Height = 42.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Custom title bar interaction smoke test'
+        TextSettings.Font.Size = 22.000000000000000000
+        TextSettings.FontColor = xFFF3F4F6
+      end
+      object SampleEdit: TEdit
+        Align = Top
+        Margins.Top = 18.000000000000000000
+        Position.Y = 60.000000000000000000
+        Size.Width = 844.000000000000000000
+        Size.Height = 40.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 0
+        Text = 'Focus and edit me'
+      end
+      object SampleButton: TButton
+        Align = Top
+        Margins.Top = 12.000000000000000000
+        Position.Y = 112.000000000000000000
+        Size.Width = 844.000000000000000000
+        Size.Height = 40.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 1
+        Text = 'Test normal FMX click'
+        OnClick = SampleButtonClick
+      end
+      object StatusLabel: TLabel
+        Align = Top
+        StyledSettings = [Family, Style]
+        Margins.Top = 18.000000000000000000
+        Position.Y = 170.000000000000000000
+        Size.Width = 844.000000000000000000
+        Size.Height = 32.000000000000000000
+        Size.PlatformDefault = False
+        Text = 'Drag empty title area; test tabs, resize, snap and system buttons.'
+        TextSettings.FontColor = xFF9CA3AF
+      end
+    end
+  end
+  object WindowTitleBar: TnbWindowTitleBar
+    TitleControl = TitleBarLayout
+    SystemButtons = WindowButtonsLayout
+    MaxButton = MaximizeButton
+    MinButton = MinimizeButton
+    CloseButton = CloseButton
+    Left = 40
+    Top = 504
+  end
+end

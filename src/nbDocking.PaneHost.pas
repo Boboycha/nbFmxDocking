@@ -12,7 +12,7 @@ interface
 
 uses
   System.Classes, System.SysUtils, System.UITypes, System.Types,
-  System.Generics.Collections,
+  System.Generics.Collections, System.Messaging,
   System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Objects,
   FMX.Dialogs,
@@ -100,6 +100,7 @@ type
     FRebuildingDesignChildren: Boolean;
     FBackgroundColor: TAlphaColor;
     FTabBarColor: TAlphaColor;
+    FTabBarSize: Single;
     FTabActiveColor: TAlphaColor;
     FTabInactiveColor: TAlphaColor;
     FTabHoverColor: TAlphaColor;
@@ -146,7 +147,10 @@ type
     FOnHeaderDrag: TPaneHeaderDragEvent;
     FOnFocusModeChanged: TNotifyEvent;
     FFocusMode: Boolean;
+    FFocusChangedMessageId: Integer;
 
+    procedure HandleFormFocusChanged(const Sender: TObject;
+      const AMessage: TMessage);
     procedure HandleTreeChanged(Sender: TPaneTree);
     procedure HandleContentSplitRequest(Sender: TnbDockingPaneContent;
       ADirection: TSplitDirection);
@@ -246,6 +250,7 @@ type
     procedure SetFocusMode(AValue: Boolean);
     procedure SetBackgroundColor(AValue: TAlphaColor);
     procedure SetTabBarColor(AValue: TAlphaColor);
+    procedure SetTabBarSize(AValue: Single);
     procedure SetTabActiveColor(AValue: TAlphaColor);
     procedure SetTabInactiveColor(AValue: TAlphaColor);
     procedure SetTabHoverColor(AValue: TAlphaColor);
@@ -312,10 +317,12 @@ type
     property ActiveLeaf: TPaneLeaf read FActiveLeaf write SetActiveLeaf;
     property ActiveTabIndex: Integer read GetActiveTabIndex;
     property FocusMode: Boolean read FFocusMode write SetFocusMode;
+    property TabBarControl: TRectangle read FTabBar;
   published
     property BackgroundColor: TAlphaColor read FBackgroundColor
       write SetBackgroundColor;
     property TabBarColor: TAlphaColor read FTabBarColor write SetTabBarColor;
+    property TabBarSize: Single read FTabBarSize write SetTabBarSize;
     property TabActiveColor: TAlphaColor read FTabActiveColor
       write SetTabActiveColor;
     property TabInactiveColor: TAlphaColor read FTabInactiveColor
@@ -372,6 +379,9 @@ type
   end;
 
 implementation
+
+uses
+  FMX.Forms;
 
 type
   TControlAccess = class(TControl);
@@ -448,6 +458,7 @@ begin
      Карточки рисуют свой фон сами. *)
   FBackgroundColor := TAlphaColor(0);
   FTabBarColor := TAlphaColor($FFE5E5E5);
+  FTabBarSize := PANE_TAB_BAR_HEIGHT;
   FTabActiveColor := TAlphaColor($FFFFFFFF);
   FTabInactiveColor := TAlphaColor($FFD0D0D0);
   FTabHoverColor := TAlphaColor($FFEEEEEE);
@@ -469,6 +480,7 @@ begin
 
   FWorkspaceLayout := TLayout.Create(Self);
   FWorkspaceLayout.Parent := Self;
+
   FWorkspaceLayout.Stored := False;
   FWorkspaceLayout.Locked := True;
   FWorkspaceLayout.Align := TAlignLayout.Client;
@@ -550,6 +562,9 @@ begin
   FRootLayout.Visible := False;
   FRootLayout.HitTest := True;
   UpdateTabBarChrome;
+
+  FFocusChangedMessageId := TMessageManager.DefaultManager.SubscribeToMessage(
+    TFormChangingFocusControl, HandleFormFocusChanged);
 end;
 
 procedure TnbDockingPaneHost.Loaded;
@@ -634,6 +649,12 @@ end;
 
 destructor TnbDockingPaneHost.Destroy;
 begin
+  if FFocusChangedMessageId <> 0 then
+  begin
+    TMessageManager.DefaultManager.Unsubscribe(
+      TFormChangingFocusControl, FFocusChangedMessageId);
+    FFocusChangedMessageId := 0;
+  end;
   FOnTabInvoked := nil;
   FOnFocusModeChanged := nil;
   FOnHeaderDrag := nil;
@@ -645,6 +666,40 @@ begin
   FTabButtons.Free;
   FTabs.Free;
   inherited;
+end;
+
+procedure TnbDockingPaneHost.HandleFormFocusChanged(const Sender: TObject;
+  const AMessage: TMessage);
+var
+  FocusMessage: TFormChangingFocusControl;
+  FocusObject: TFmxObject;
+  Content: TnbDockingPaneContent;
+  Leaf: TPaneLeaf;
+begin
+  if csDestroying in ComponentState then Exit;
+  if (Sender is TComponent)
+     and (csDestroying in TComponent(Sender).ComponentState) then Exit;
+  if FTree = nil then Exit;
+  if not (AMessage is TFormChangingFocusControl) then Exit;
+  FocusMessage := TFormChangingFocusControl(AMessage);
+  if not FocusMessage.IsChanged then Exit;
+  if FocusMessage.NewFocusedControl = nil then Exit;
+
+  FocusObject := FocusMessage.NewFocusedControl.GetObject;
+  while FocusObject <> nil do
+  begin
+    if FocusObject is TnbDockingPaneContent then
+    begin
+      Content := TnbDockingPaneContent(FocusObject);
+      Leaf := FindLeafByContent(Content);
+      if Leaf <> nil then
+      begin
+        InternalSetActive(Leaf);
+        Exit;
+      end;
+    end;
+    FocusObject := FocusObject.Parent;
+  end;
 end;
 
 procedure TnbDockingPaneHost.WireContent(AContent: TnbDockingPaneContent);
@@ -2062,7 +2117,7 @@ begin
   ClosingTab := FTabs[TabIndex];
   (* MouseDown belongs to a tab button that CloseTab rebuilds and frees.
      Defer closing until FMX has returned from the button event. *)
-  TThread.ForceQueue(nil,
+  TThread.ForceQueue(nil, TThreadProcedure(
     procedure
     var
       ClosingIndex: Integer;
@@ -2071,7 +2126,7 @@ begin
       ClosingIndex := FTabs.IndexOf(ClosingTab);
       if ClosingIndex >= 0 then
         CloseTab(ClosingIndex);
-    end);
+    end));
 end;
 
 procedure TnbDockingPaneHost.HandleTabCloseButtonMouseEnter(Sender: TObject);
@@ -2227,7 +2282,7 @@ begin
   if (FTabBar = nil) or (FTabButtons = nil) then Exit;
   if not FVisibleTabs then Exit;
 
-  BarSize := PANE_TAB_BAR_HEIGHT;
+  BarSize := FTabBarSize;
   Pos := 8;
   for I := 0 to FTabButtons.Count - 1 do
   begin
@@ -2282,7 +2337,7 @@ begin
   FTabButtons.Clear;
   if not FVisibleTabs then Exit;
 
-  BarSize := PANE_TAB_BAR_HEIGHT;
+  BarSize := FTabBarSize;
   Pos := 8;
   for I := 0 to FTabs.Count - 1 do
   begin
@@ -2807,6 +2862,15 @@ begin
   UpdateTabBarChrome;
 end;
 
+procedure TnbDockingPaneHost.SetTabBarSize(AValue: Single);
+begin
+  if AValue < 28 then AValue := 28;
+  if SameValue(FTabBarSize, AValue) then Exit;
+  FTabBarSize := AValue;
+  UpdateTabBarChrome;
+  RebuildTabButtons;
+end;
+
 procedure TnbDockingPaneHost.SetTabPosition(AValue: TnbDockingTabPosition);
 begin
   if FTabPosition = AValue then Exit;
@@ -2829,7 +2893,7 @@ var
 begin
   if FTabBar = nil then Exit;
 
-  BarSize := PANE_TAB_BAR_HEIGHT;
+  BarSize := FTabBarSize;
   BtnSize := PANE_TAB_ADD_BUTTON_WIDTH - 10;
   FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Visible := FVisibleTabs;
