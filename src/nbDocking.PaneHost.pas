@@ -26,7 +26,6 @@ const
   PANE_ROOT_DROP_EDGE_SIZE = 32;
   PANE_TAB_CLOSE_SIZE = 16;
   PANE_TAB_MIN_WIDTH = 104;
-  PANE_TAB_MAX_WIDTH = 220;
   PANE_TAB_TEXT_PADDING = 28;
   {$IFDEF LINUX}
   PANE_TAB_ICON_FONT = '';
@@ -93,6 +92,7 @@ type
     FTabButtons: TObjectList<TRectangle>;
     FWorkspaceLayout: TLayout;
     FTabBar: TRectangle;
+    FTabBarHost: TControl;
     FAddButton: TRectangle;
     FAddGlyph: TText;
     FRootLayout: TLayout;
@@ -183,6 +183,8 @@ type
     procedure UpdateTabButtonStates;
     procedure RebuildTabButtons;
     procedure LayoutTabButtons;
+    procedure LayoutTabBarChildren;
+    procedure HandleTabBarResize(Sender: TObject);
     procedure HandleTabButtonMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Single);
     procedure HandleTabButtonMouseMove(Sender: TObject; Shift: TShiftState;
@@ -273,6 +275,8 @@ type
   protected
     procedure Loaded; override;
     procedure Resize; override;
+    procedure Notification(AComponent: TComponent;
+      Operation: TOperation); override;
     procedure DoAddObject(const AObject: TFmxObject); override;
     procedure DoRemoveObject(const AObject: TFmxObject); override;
   public
@@ -315,6 +319,8 @@ type
     function TabTree(AIndex: Integer): TPaneTree;
     function TabActiveLeaf(AIndex: Integer): TPaneLeaf;
     function TabActiveContent(AIndex: Integer): TnbDockingPaneContent;
+    procedure SetTabBarHost(AHost: TControl);
+    procedure RefreshTabLayout;
 
     property Tree: TPaneTree read FTree;
     property ActiveLeaf: TPaneLeaf read FActiveLeaf write SetActiveLeaf;
@@ -495,7 +501,9 @@ begin
   FTabBar.Locked := True;
   FTabBar.Align := TAlignLayout.None;
   FTabBar.Visible := False;
-  FTabBar.HitTest := True;
+  FTabBar.ClipChildren := True;
+  FTabBar.OnResize := HandleTabBarResize;
+  FTabBar.HitTest := False;
   FTabBar.Fill.Kind := TBrushKind.Solid;
   FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Stroke.Kind := TBrushKind.None;
@@ -652,6 +660,11 @@ end;
 
 destructor TnbDockingPaneHost.Destroy;
 begin
+  if FTabBarHost <> nil then
+  begin
+    FTabBarHost.RemoveFreeNotification(Self);
+    FTabBarHost := nil;
+  end;
   if FFocusChangedMessageId <> 0 then
   begin
     TMessageManager.DefaultManager.Unsubscribe(
@@ -669,6 +682,21 @@ begin
   FTabButtons.Free;
   FTabs.Free;
   inherited;
+end;
+
+procedure TnbDockingPaneHost.Notification(AComponent: TComponent;
+  Operation: TOperation);
+begin
+  inherited;
+  if (Operation = opRemove) and (AComponent = FTabBarHost) then
+  begin
+    FTabBarHost := nil;
+    if (FTabBar <> nil) and not (csDestroying in ComponentState) then
+    begin
+      FTabBar.Parent := Self;
+      UpdateTabBarChrome;
+    end;
+  end;
 end;
 
 procedure TnbDockingPaneHost.HandleFormFocusChanged(const Sender: TObject;
@@ -2328,6 +2356,35 @@ begin
   FTabDragTargetIsRoot := False;
 end;
 
+procedure TnbDockingPaneHost.RefreshTabLayout;
+begin
+  RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.SetTabBarHost(AHost: TControl);
+begin
+  if FTabBarHost = AHost then
+  begin
+    LayoutTabBarChildren;
+    Exit;
+  end;
+
+  if FTabBarHost <> nil then
+    FTabBarHost.RemoveFreeNotification(Self);
+  FTabBarHost := AHost;
+  if FTabBarHost <> nil then
+    FTabBarHost.FreeNotification(Self);
+
+  if FTabBar <> nil then
+  begin
+    if FTabBarHost <> nil then
+      FTabBar.Parent := FTabBarHost
+    else
+      FTabBar.Parent := Self;
+    UpdateTabBarChrome;
+  end;
+end;
+
 procedure TnbDockingPaneHost.UpdateTabButtonStates;
 var
   I: Integer;
@@ -2347,15 +2404,65 @@ end;
 
 procedure TnbDockingPaneHost.LayoutTabButtons;
 var
-  I: Integer;
+  I, VisibleCount: Integer;
   Btn: TRectangle;
-  Pos, BarSize: Single;
+  Pos, BarSize, AvailableWidth, TotalWidth, WidthScale: Single;
+  NaturalWidth, TargetWidth: Single;
 begin
   if (FTabBar = nil) or (FTabButtons = nil) then Exit;
   if not FVisibleTabs then Exit;
 
   BarSize := FTabBarSize;
   Pos := 8;
+
+  if not (FTabPosition in [dtpLeft, dtpRight]) then
+  begin
+    VisibleCount := 0;
+    TotalWidth := 0;
+    for I := 0 to FTabButtons.Count - 1 do
+    begin
+      Btn := FTabButtons[I];
+      if Btn = nil then Continue;
+      if Btn.TagFloat > 0 then
+        NaturalWidth := Btn.TagFloat
+      else
+        NaturalWidth := Btn.Width;
+      Inc(VisibleCount);
+      TotalWidth := TotalWidth + NaturalWidth;
+    end;
+
+    if VisibleCount > 0 then
+    begin
+      TotalWidth := TotalWidth + 6 * Max(0, VisibleCount - 1);
+      AvailableWidth := Max(0, FTabBar.Width - 16);
+      if FShowAddButton then
+        AvailableWidth := Max(0, AvailableWidth -
+          (PANE_TAB_ADD_BUTTON_WIDTH - 10) - 6);
+      WidthScale := 1;
+      if TotalWidth > AvailableWidth then
+        WidthScale := Max(0, AvailableWidth -
+          6 * Max(0, VisibleCount - 1)) /
+          Max(1, TotalWidth - 6 * Max(0, VisibleCount - 1));
+
+      for I := 0 to FTabButtons.Count - 1 do
+      begin
+        Btn := FTabButtons[I];
+        if Btn = nil then Continue;
+        if Btn.TagFloat > 0 then
+          NaturalWidth := Btn.TagFloat
+        else
+          NaturalWidth := Btn.Width;
+        TargetWidth := NaturalWidth * WidthScale;
+        if not SameValue(Btn.Width, TargetWidth, 0.5) then
+          Btn.Width := TargetWidth;
+        if (Btn.ChildrenCount > 1) and
+           (Btn.Children[1] is TRectangle) then
+          TRectangle(Btn.Children[1]).Position.X := Max(0,
+            TargetWidth - PANE_TAB_CLOSE_SIZE - 4);
+      end;
+    end;
+  end;
+
   for I := 0 to FTabButtons.Count - 1 do
   begin
     Btn := FTabButtons[I];
@@ -2376,6 +2483,42 @@ begin
     end;
   end;
 end;
+
+procedure TnbDockingPaneHost.LayoutTabBarChildren;
+var
+  BarSize, BtnSize: Single;
+begin
+  if FTabBar = nil then Exit;
+
+  LayoutTabButtons;
+
+  if FAddButton <> nil then
+  begin
+    BarSize := FTabBarSize;
+    BtnSize := PANE_TAB_ADD_BUTTON_WIDTH - 10;
+    FAddButton.Visible := FVisibleTabs and FShowAddButton;
+    FAddButton.Width := BtnSize;
+    FAddButton.Height := BtnSize;
+    if FTabPosition in [dtpLeft, dtpRight] then
+    begin
+      FAddButton.Position.X := (BarSize - BtnSize) / 2;
+      FAddButton.Position.Y := FTabBar.Height - BtnSize - 8;
+    end
+    else
+    begin
+      FAddButton.Position.X := FTabBar.Width - BtnSize - 8;
+      FAddButton.Position.Y := (BarSize - BtnSize) / 2;
+    end;
+    if FAddButton.Visible then
+      FAddButton.BringToFront;
+  end;
+end;
+
+procedure TnbDockingPaneHost.HandleTabBarResize(Sender: TObject);
+begin
+  LayoutTabBarChildren;
+end;
+
 procedure TnbDockingPaneHost.RebuildTabButtons;
 
   function MeasureCaptionWidth(const ACaption: string): Single;
@@ -2474,10 +2617,9 @@ begin
     end
     else
     begin
-      BtnWidth := EnsureRange(
+      BtnWidth := Max(PANE_TAB_MIN_WIDTH,
         Ceil(MeasureCaptionWidth(Txt.Text)) + PANE_TAB_CLOSE_SIZE +
-          PANE_TAB_TEXT_PADDING,
-        PANE_TAB_MIN_WIDTH, PANE_TAB_MAX_WIDTH);
+          PANE_TAB_TEXT_PADDING);
       BtnHeight := BarSize - 16;
       Btn.Position.X := Pos;
       Btn.Position.Y := 8;
@@ -2485,6 +2627,7 @@ begin
     end;
     Btn.Width := BtnWidth;
     Btn.Height := BtnHeight;
+    Btn.TagFloat := BtnWidth;
 
     (* Кнопка ✕ только для горизонтальных табов *)
     if IsHorizontal then
@@ -2522,6 +2665,7 @@ begin
       CloseGlyph.HitTest := False;
     end;
   end;
+  LayoutTabBarChildren;
 end;
 
 procedure TnbDockingPaneHost.HandleAddButtonClick(Sender: TObject;
@@ -2960,13 +3104,12 @@ end;
 
 procedure TnbDockingPaneHost.UpdateTabBarChrome;
 var
-  BarSize, BtnSize: Single;
+  BarSize: Single;
   NewPadding: TRectF;
 begin
   if FTabBar = nil then Exit;
 
   BarSize := FTabBarSize;
-  BtnSize := PANE_TAB_ADD_BUTTON_WIDTH - 10;
   FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Visible := FVisibleTabs;
 
@@ -2977,45 +3120,54 @@ begin
      realign'а на КАЖДЫЙ Resize, даже если итоговое значение не менялось
      (600мс-1.1с на вызов при большом списке в активной вкладке). *)
   NewPadding := RectF(0, 0, 0, 0);
-  case FTabPosition of
-    dtpBottom:
-      begin
-        FTabBar.Align := TAlignLayout.None;
-        FTabBar.Position.X := 0;
-        FTabBar.Position.Y := Height - BarSize;
-        FTabBar.Width := Width;
-        FTabBar.Height := BarSize;
-        if FVisibleTabs then
-          NewPadding.Bottom := BarSize;
-      end;
-    dtpLeft:
-      begin
-        FTabBar.Align := TAlignLayout.None;
-        FTabBar.Position.X := 0;
-        FTabBar.Position.Y := 0;
-        FTabBar.Width := BarSize;
-        FTabBar.Height := Height;
-        if FVisibleTabs then
-          NewPadding.Left := BarSize;
-      end;
-    dtpRight:
-      begin
-        FTabBar.Align := TAlignLayout.None;
-        FTabBar.Position.X := Width - BarSize;
-        FTabBar.Position.Y := 0;
-        FTabBar.Width := BarSize;
-        FTabBar.Height := Height;
-        if FVisibleTabs then
-          NewPadding.Right := BarSize;
-      end;
+  if FTabBarHost <> nil then
+  begin
+    if FTabBar.Parent <> FTabBarHost then
+      FTabBar.Parent := FTabBarHost;
+    FTabBar.Align := TAlignLayout.Client;
+  end
   else
-    FTabBar.Align := TAlignLayout.None;
-    FTabBar.Position.X := 0;
-    FTabBar.Position.Y := 0;
-    FTabBar.Width := Width;
-    FTabBar.Height := BarSize;
-    if FVisibleTabs then
-      NewPadding.Top := BarSize;
+  begin
+    case FTabPosition of
+      dtpBottom:
+        begin
+          FTabBar.Align := TAlignLayout.None;
+          FTabBar.Position.X := 0;
+          FTabBar.Position.Y := Height - BarSize;
+          FTabBar.Width := Width;
+          FTabBar.Height := BarSize;
+          if FVisibleTabs then
+            NewPadding.Bottom := BarSize;
+        end;
+      dtpLeft:
+        begin
+          FTabBar.Align := TAlignLayout.None;
+          FTabBar.Position.X := 0;
+          FTabBar.Position.Y := 0;
+          FTabBar.Width := BarSize;
+          FTabBar.Height := Height;
+          if FVisibleTabs then
+            NewPadding.Left := BarSize;
+        end;
+      dtpRight:
+        begin
+          FTabBar.Align := TAlignLayout.None;
+          FTabBar.Position.X := Width - BarSize;
+          FTabBar.Position.Y := 0;
+          FTabBar.Width := BarSize;
+          FTabBar.Height := Height;
+          if FVisibleTabs then
+            NewPadding.Right := BarSize;
+        end;
+    else
+      FTabBar.Align := TAlignLayout.None;
+      FTabBar.Position.X := 0;
+      FTabBar.Position.Y := 0;
+      FTabBar.Width := Width;
+      FTabBar.Height := BarSize;
+      if FVisibleTabs then
+        NewPadding.Top := BarSize;
+    end;
   end;
 
   if (Padding.Rect.Left <> NewPadding.Left) or (Padding.Rect.Top <> NewPadding.Top)
@@ -3025,26 +3177,7 @@ begin
   if FVisibleTabs then
     FTabBar.BringToFront;
 
-  LayoutTabButtons;
-
-  if FAddButton <> nil then
-  begin
-    FAddButton.Visible := FVisibleTabs and FShowAddButton;
-    FAddButton.Width := BtnSize;
-    FAddButton.Height := BtnSize;
-    if FTabPosition in [dtpLeft, dtpRight] then
-    begin
-      FAddButton.Position.X := (BarSize - BtnSize) / 2;
-      FAddButton.Position.Y := FTabBar.Height - BtnSize - 8;
-    end
-    else
-    begin
-      FAddButton.Position.X := FTabBar.Width - BtnSize - 8;
-      FAddButton.Position.Y := (BarSize - BtnSize) / 2;
-    end;
-    if FAddButton.Visible then
-      FAddButton.BringToFront;
-  end;
+  LayoutTabBarChildren;
 
   if FAddGlyph <> nil then
     FAddGlyph.TextSettings.FontColor := FTabTextColor;
@@ -3794,7 +3927,3 @@ begin
 end;
 
 end.
-
-
-
-

@@ -118,19 +118,28 @@ type
   (* Кнопка action в rtHeader — styled FMX button с привязанным id. *)
   TPaneHeaderActionButton = class(TSpeedButton)
   private
+    FBoundToggleAction: TAction;
+    FCheckedIndicator: TRectangle;
     FIcon: TPaneHeaderVectorIcon;
     FLocalBg: TAlphaColor;
     FLocalBorder: TAlphaColor;
     FLocalText: TAlphaColor;
+    FActionChecked: Boolean;
     procedure HandleApplyStyleLookup(Sender: TObject);
     procedure HandleLocalMouseEnter(Sender: TObject);
     procedure HandleLocalMouseLeave(Sender: TObject);
+    procedure HandleToggleActionClick(Sender: TObject);
+  protected
+    procedure Notification(AComponent: TComponent;
+      Operation: TOperation); override;
   public
     ActionId: string;
     constructor Create(AOwner: TComponent); override;
     procedure PaintLocalChrome;
     procedure ApplyLocalChrome(ABg, ABorder, AText: TAlphaColor);
+    procedure BindToggleAction(AAction: TAction);
     procedure SetIconName(const AValue: string);
+    property ActionChecked: Boolean read FActionChecked;
   end;
 
   TnbDockingPaneContent = class(TRectangle)
@@ -363,6 +372,8 @@ const
     '"copy":{"fill":false,"data":"M 10 9 L 19 9 C 19.55 9 20 9.45 20 10 L 20 19 C 20 19.55 19.55 20 19 20 L 10 20 C 9.45 20 9 19.55 9 19 L 9 10 C 9 9.45 9.45 9 10 9 Z M 5.5 15 L 5 15 C 4.45 15 4 14.55 4 14 L 4 5 C 4 4.45 4.45 4 5 4 L 14 4 C 14.55 4 15 4.45 15 5 L 15 5.5"},' +
     '"paste":{"fill":false,"data":"M 9.5 3.5 L 14.5 3.5 C 15.05 3.5 15.5 3.95 15.5 4.5 L 15.5 5.5 C 15.5 6.05 15.05 6.5 14.5 6.5 L 9.5 6.5 C 8.95 6.5 8.5 6.05 8.5 5.5 L 8.5 4.5 C 8.5 3.95 8.95 3.5 9.5 3.5 Z M 15.5 5 L 17 5 C 17.55 5 18 5.45 18 6 L 18 19.5 C 18 20.05 17.55 20.5 17 20.5 L 7 20.5 C 6.45 20.5 6 20.05 6 19.5 L 6 6 C 6 5.45 6.45 5 7 5 L 8.5 5"},' +
     '"download":{"fill":false,"data":"M 12 4 L 12 15.5 M 7 10.5 L 12 15.5 L 17 10.5 M 4 17 L 4 19 C 4 19.55 4.45 20 5 20 L 19 20 C 19.55 20 20 19.55 20 19 L 20 17"},' +
+    '"file":{"fill":false,"data":"M 7 3.5 L 14 3.5 L 19 8.5 L 19 20.5 L 7 20.5 Z M 14 3.5 L 14 8.5 L 19 8.5"},' +
+    '"forward":{"fill":false,"data":"M 4 12 L 20 12 M 14 6 L 20 12 L 14 18"},' +
     '"play":{"fill":true,"data":"M 8.5 5.5 L 19 12 L 8.5 18.5 Z"},' +
     '"back":{"fill":false,"data":"M 20 12 L 4 12 M 10 6 L 4 12 L 10 18"},' +
     '"key":{"fill":false,"data":"M 4 11.5 A 3.25 3.25 0 1 0 10.5 11.5 A 3.25 3.25 0 1 0 4 11.5 M 10.5 11.5 L 20 11.5 M 16.5 11.5 L 16.5 15 M 20 11.5 L 20 14.5"},' +
@@ -370,6 +381,9 @@ const
     '"broadcast":{"fill":false,"data":"M 3 12 A 2 2 0 1 0 7 12 A 2 2 0 1 0 3 12 M 17 5 A 2 2 0 1 0 21 5 A 2 2 0 1 0 17 5 M 17 12 A 2 2 0 1 0 21 12 A 2 2 0 1 0 17 12 M 17 19 A 2 2 0 1 0 21 19 A 2 2 0 1 0 17 19 M 7 12 L 17 12 M 6.8 11.1 L 17.2 5.9 M 6.8 12.9 L 17.2 18.1"},' +
     '"folder":{"fill":false,"data":"M 4 6 C 4 5.45 4.45 5 5 5 L 9.6 5 L 11.6 7 L 19 7 C 19.55 7 20 7.45 20 8 L 20 18 C 20 18.55 19.55 19 19 19 L 5 19 C 4.45 19 4 18.55 4 18 Z"},' +
     '"theme":{"fill":false,"data":"M 12 21.5 A 9.5 9.5 0 1 1 21.5 12 C 21.5 13.65 20.15 15 18.5 15 L 16.5 15 C 15.4 15 14.5 15.9 14.5 17 C 14.5 17.5 14.7 17.95 15 18.35 C 15.3 18.75 15.5 19.2 15.5 19.7 C 15.5 20.7 14.7 21.5 13.7 21.5 Z M 12.5 6.5 A 1 1 0 1 0 14.5 6.5 A 1 1 0 1 0 12.5 6.5 M 16.5 10.5 A 1 1 0 1 0 18.5 10.5 A 1 1 0 1 0 16.5 10.5 M 7.5 7.5 A 1 1 0 1 0 9.5 7.5 A 1 1 0 1 0 7.5 7.5 M 5.5 12.5 A 1 1 0 1 0 7.5 12.5 A 1 1 0 1 0 5.5 12.5"},' +
+    '"env-production":{"fill":false,"data":"M 5 5 L 19 5 L 19 11 L 5 11 Z M 5 13 L 19 13 L 19 19 L 5 19 Z M 8 8 L 9 8 M 8 16 L 9 16 M 12 8 L 16 8 M 12 16 L 16 16"},' +
+    '"env-staging":{"fill":false,"data":"M 12 4 L 20 8 L 12 12 L 4 8 Z M 4 12 L 12 16 L 20 12 M 4 16 L 12 20 L 20 16"},' +
+    '"env-test":{"fill":false,"data":"M 9 4 L 15 4 M 10 4 L 10 10 L 5.5 18 C 5 19 5.7 20 7 20 L 17 20 C 18.3 20 19 19 18.5 18 L 14 10 L 14 4 M 8 15 L 16 15"},' +
     '"focus":{"fill":false,"data":"M 5 10 L 5 5 L 10 5 M 14 5 L 19 5 L 19 10 M 19 14 L 19 19 L 14 19 M 10 19 L 5 19 L 5 14"},' +
     '"restore":{"fill":false,"data":"M 5 5 L 10 5 L 10 10 M 14 10 L 14 5 L 19 5 M 19 19 L 14 19 L 14 14 M 10 14 L 10 19 L 5 19"},' +
     '"scripts":{"fill":false,"data":"M 8 7 L 3.5 12 L 8 17 M 16 7 L 20.5 12 L 16 17 M 13.5 5.5 L 10.5 18.5"}' +
@@ -382,10 +396,10 @@ const
     '"up":"up","ascending":"up","down":"down","descending":"down",' +
     '"list":"list","table":"list","grid":"cards","cards":"cards",' +
     '"close":"close","cancel":"close","x":"close",' +
-    '"delete":"delete","edit":"edit","reload":"refresh","refresh":"refresh",' +
-    '"save":"save","copy":"copy","paste":"paste",' +
+    '"delete":"delete","edit":"edit","rename":"edit","reload":"refresh","refresh":"refresh",' +
+    '"save":"save","copy":"copy","paste":"paste","file":"file","new-file":"file",' +
     '"import":"download","download":"download","generate":"key","key":"key",' +
-    '"select":"select","back":"back","connect":"play","run":"play","play":"play",' +
+    '"select":"select","back":"back","left":"back","<":"back","forward":"forward","right":"forward",">":"forward","connect":"play","run":"play","play":"play",' +
     '"focus":"focus","restore":"restore","scripts":"scripts","script":"scripts",' +
     '"broadcast":"broadcast","b":"broadcast",' +
     '"sftp":"folder","folder":"folder","s":"folder",' +
@@ -691,7 +705,17 @@ begin
   FLocalBg := TAlphaColor($FF2A2A2A);
   FLocalBorder := TAlphaColor($40E0E0E0);
   FLocalText := TAlphaColor($FFE0E0E0);
+  FBoundToggleAction := nil;
+  FActionChecked := False;
   Text := '';
+  FCheckedIndicator := TRectangle.Create(Self);
+  FCheckedIndicator.Parent := Self;
+  FCheckedIndicator.Align := TAlignLayout.Client;
+  FCheckedIndicator.Margins.Rect := RectF(1, 1, 1, 1);
+  FCheckedIndicator.XRadius := 3;
+  FCheckedIndicator.YRadius := 3;
+  FCheckedIndicator.HitTest := False;
+  FCheckedIndicator.Visible := False;
   FIcon := TPaneHeaderVectorIcon.Create(Self);
   FIcon.Parent := Self;
   FIcon.Align := TAlignLayout.Client;
@@ -708,6 +732,49 @@ begin
   PaintLocalChrome;
 end;
 
+procedure TPaneHeaderActionButton.Notification(AComponent: TComponent;
+  Operation: TOperation);
+begin
+  inherited;
+  if (Operation = opRemove) and (AComponent = FBoundToggleAction) then
+    FBoundToggleAction := nil;
+end;
+
+procedure TPaneHeaderActionButton.BindToggleAction(AAction: TAction);
+begin
+  if FBoundToggleAction = AAction then
+    Exit;
+  if FBoundToggleAction <> nil then
+    FBoundToggleAction.RemoveFreeNotification(Self);
+  FBoundToggleAction := AAction;
+  if FBoundToggleAction <> nil then
+  begin
+    FBoundToggleAction.FreeNotification(Self);
+    Enabled := FBoundToggleAction.Enabled;
+    FActionChecked := FBoundToggleAction.Checked;
+    OnClick := HandleToggleActionClick;
+  end
+  else
+  begin
+    FActionChecked := False;
+    OnClick := nil;
+  end;
+  PaintLocalChrome;
+end;
+
+procedure TPaneHeaderActionButton.HandleToggleActionClick(Sender: TObject);
+begin
+  if FBoundToggleAction = nil then
+    Exit;
+  FBoundToggleAction.Execute;
+  FActionChecked := FBoundToggleAction.Checked;
+  if FActionChecked then
+    Opacity := 1.0
+  else
+    Opacity := 0.72;
+  PaintLocalChrome;
+end;
+
 procedure TPaneHeaderActionButton.HandleLocalMouseEnter(Sender: TObject);
 begin
   Opacity := 1.0;
@@ -716,7 +783,10 @@ end;
 
 procedure TPaneHeaderActionButton.HandleLocalMouseLeave(Sender: TObject);
 begin
-  Opacity := 0.72;
+  if FActionChecked then
+    Opacity := 1.0
+  else
+    Opacity := 0.72;
   PaintLocalChrome;
 end;
 
@@ -767,7 +837,12 @@ var
       Shape := TShape(Obj);
       Bg := FLocalBg;
       Border := FLocalBorder;
-      if Opacity >= 0.99 then
+      if FActionChecked then
+      begin
+        Bg := BlendColor(FLocalBg, FLocalText, 0.20);
+        Border := BlendColor(FLocalBorder, FLocalText, 0.68);
+      end
+      else if Opacity >= 0.99 then
       begin
         Bg := HoverBg;
         Border := HoverBorder;
@@ -782,12 +857,25 @@ var
 begin
   HoverBg := BlendColor(FLocalBg, FLocalText, 0.10);
   HoverBorder := BlendColor(FLocalBorder, FLocalText, 0.42);
+  if FCheckedIndicator <> nil then
+  begin
+    FCheckedIndicator.Visible := FActionChecked;
+    FCheckedIndicator.Fill.Kind := TBrushKind.Solid;
+    FCheckedIndicator.Fill.Color := BlendColor(FLocalBg, FLocalText, 0.20);
+    FCheckedIndicator.Stroke.Kind := TBrushKind.Solid;
+    FCheckedIndicator.Stroke.Color := BlendColor(FLocalBorder,
+      FLocalText, 0.68);
+    FCheckedIndicator.BringToFront;
+  end;
+  if FIcon <> nil then
+  begin
+    FIcon.BringToFront;
+    FIcon.IconColor := FLocalText;
+  end;
   StyledSettings := StyledSettings - [TStyledSetting.FontColor,
     TStyledSetting.Family, TStyledSetting.Size];
   Text := '';
   TextSettings.FontColor := FLocalText;
-  if FIcon <> nil then
-    FIcon.IconColor := FLocalText;
   DisableStyleColorAnimations(ResourceLink);
   PaintShape('background');
   PaintShape('bg');
@@ -1554,7 +1642,10 @@ begin
     Btn.ActionId := Action.Id;
     if Action.Action <> nil then
     begin
-      Btn.Action := Action.Action;
+      if Action.Action.AutoCheck then
+        Btn.BindToggleAction(Action.Action)
+      else
+        Btn.Action := Action.Action;
       Btn.Text := '';
     end
     else
@@ -1619,7 +1710,10 @@ procedure TnbDockingPaneContent.HandleActionMouseLeave(Sender: TObject);
 begin
   if Sender is TPaneHeaderActionButton then
   begin
-    TPaneHeaderActionButton(Sender).Opacity := 0.72;
+    if TPaneHeaderActionButton(Sender).ActionChecked then
+      TPaneHeaderActionButton(Sender).Opacity := 1.0
+    else
+      TPaneHeaderActionButton(Sender).Opacity := 0.72;
     TPaneHeaderActionButton(Sender).PaintLocalChrome;
   end;
 end;

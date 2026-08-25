@@ -98,6 +98,7 @@ type
     procedure SetMaxButton(const Value: TControl);
     procedure SetMinButton(const Value: TControl);
     procedure SetCloseButton(const Value: TControl);
+    procedure AttachDockingTabBar;
 
   protected
     procedure Loaded; override;
@@ -183,6 +184,8 @@ end;
 
 destructor TnbWindowTitleBar.Destroy;
 begin
+  if FDockingHost <> nil then
+    FDockingHost.SetTabBarHost(nil);
   if not(csDesigning in ComponentState) then
   begin
 {$IFDEF MSWINDOWS}
@@ -195,6 +198,7 @@ end;
 procedure TnbWindowTitleBar.Loaded;
 begin
   inherited;
+  AttachDockingTabBar;
   if (FForm <> nil) and (not(csDesigning in ComponentState)) and FEnabled then
     Apply;
 end;
@@ -206,7 +210,10 @@ begin
   if Operation = opRemove then
   begin
     if AComponent = FTitleControl then
+    begin
       FTitleControl := nil;
+      AttachDockingTabBar;
+    end;
     if AComponent = FDockingHost then
       FDockingHost := nil;
     if AComponent = FMaxButton then
@@ -226,6 +233,7 @@ var
   h: HWND;
 {$ENDIF}
 begin
+  AttachDockingTabBar;
   if (FForm = nil) or (csDesigning in ComponentState) then
     Exit;
 
@@ -303,23 +311,35 @@ begin
   FTitleControl := Value;
   if FTitleControl <> nil then
     FTitleControl.FreeNotification(Self);
+  AttachDockingTabBar;
 end;
 
 procedure TnbWindowTitleBar.SetDockingHost(const Value: TnbDockingPaneHost);
 begin
   if FDockingHost = Value then
     Exit;
+  if FDockingHost <> nil then
+    FDockingHost.SetTabBarHost(nil);
   FDockingHost := Value;
   if FDockingHost <> nil then
     FDockingHost.FreeNotification(Self);
+  AttachDockingTabBar;
+end;
+
+procedure TnbWindowTitleBar.AttachDockingTabBar;
+begin
+  if FDockingHost <> nil then
+    FDockingHost.SetTabBarHost(FTitleControl);
 end;
 
 function TnbWindowTitleBar.EffectiveTitleControl: TControl;
 begin
-  if FDockingHost <> nil then
+  if FTitleControl <> nil then
+    Result := FTitleControl
+  else if FDockingHost <> nil then
     Result := FDockingHost.TabBarControl
   else
-    Result := FTitleControl;
+    Result := nil;
 end;
 procedure TnbWindowTitleBar.SetSystemButtons(const Value: TControl);
 begin
