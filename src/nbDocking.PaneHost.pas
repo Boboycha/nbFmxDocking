@@ -503,7 +503,11 @@ begin
   FTabBar.Visible := False;
   FTabBar.ClipChildren := True;
   FTabBar.OnResize := HandleTabBarResize;
+{$IFDEF LINUX}
+  FTabBar.HitTest := True;
+{$ELSE}
   FTabBar.HitTest := False;
+{$ENDIF}
   FTabBar.Fill.Kind := TBrushKind.Solid;
   FTabBar.Fill.Color := FTabBarColor;
   FTabBar.Stroke.Kind := TBrushKind.None;

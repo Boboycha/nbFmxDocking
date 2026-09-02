@@ -334,12 +334,19 @@ end;
 
 function TnbWindowTitleBar.EffectiveTitleControl: TControl;
 begin
+{$IFDEF LINUX}
+  if FDockingHost <> nil then
+    Result := FDockingHost.TabBarControl
+  else
+    Result := FTitleControl;
+{$ELSE}
   if FTitleControl <> nil then
     Result := FTitleControl
   else if FDockingHost <> nil then
     Result := FDockingHost.TabBarControl
   else
     Result := nil;
+{$ENDIF}
 end;
 procedure TnbWindowTitleBar.SetSystemButtons(const Value: TControl);
 begin
