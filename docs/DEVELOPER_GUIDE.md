@@ -53,7 +53,7 @@ Registration units should stay isolated from runtime code. If the package is spl
 
 ## Compatibility Rules
 
-- Avoid breaking public method names used by `nbFleet`.
+- Avoid breaking public method names used by `nTizgin`.
 - Keep pane content ownership explicit.
 - Do not free consumer-owned controls from docking internals.
 - Prefer adding new APIs over changing current semantics.
