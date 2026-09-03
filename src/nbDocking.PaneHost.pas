@@ -15,7 +15,7 @@ uses
   System.Generics.Collections, System.Messaging,
   System.Math,
   FMX.Types, FMX.Controls, FMX.Layouts, FMX.StdCtrls, FMX.Objects,
-  FMX.Dialogs,
+  FMX.Dialogs, FMX.DialogService.Sync,
   FMX.Graphics,
   nbDocking.Types, nbDocking.PaneTree, nbDocking.DropOverlay;
 
@@ -2146,6 +2146,7 @@ var
   TabIndex: Integer;
   Tab: TPaneHostTab;
   NewCaption: string;
+  Values: array[0..0] of string;
   Leaf: TPaneLeaf;
 begin
   if not (Sender is TControl) then Exit;
@@ -2155,7 +2156,9 @@ begin
   CancelTabDrag;
   Tab := FTabs[TabIndex];
   NewCaption := CaptionForTab(Tab, Tab.Caption);
-  if not InputQuery('Rename tab', 'Caption', NewCaption) then Exit;
+  Values[0] := NewCaption;
+  if not TDialogServiceSync.InputQuery('Rename tab', ['Caption'], Values) then Exit;
+  NewCaption := Values[0];
   NewCaption := Trim(NewCaption);
   if NewCaption = '' then Exit;
 
