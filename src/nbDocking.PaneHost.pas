@@ -24,6 +24,9 @@ const
   PANE_TAB_ADD_BUTTON_WIDTH = 34;
   PANE_TAB_DRAG_THRESHOLD = 5;
   PANE_ROOT_DROP_EDGE_SIZE = 32;
+  PANE_TAB_MARGIN = 2;
+  PANE_TAB_SPACING = 2;
+  PANE_TAB_CROSS_MARGIN = 4;
   PANE_TAB_CLOSE_SIZE = 16;
   PANE_TAB_MIN_WIDTH = 104;
   PANE_TAB_TEXT_PADDING = 28;
@@ -2420,7 +2423,7 @@ begin
   if not FVisibleTabs then Exit;
 
   BarSize := FTabBarSize;
-  Pos := 8;
+  Pos := PANE_TAB_MARGIN;
 
   if not (FTabPosition in [dtpLeft, dtpRight]) then
   begin
@@ -2440,16 +2443,16 @@ begin
 
     if VisibleCount > 0 then
     begin
-      TotalWidth := TotalWidth + 6 * Max(0, VisibleCount - 1);
-      AvailableWidth := Max(0, FTabBar.Width - 16);
+      TotalWidth := TotalWidth + PANE_TAB_SPACING * Max(0, VisibleCount - 1);
+      AvailableWidth := Max(0, FTabBar.Width - PANE_TAB_MARGIN * 2);
       if FShowAddButton then
         AvailableWidth := Max(0, AvailableWidth -
-          (PANE_TAB_ADD_BUTTON_WIDTH - 10) - 6);
+          (PANE_TAB_ADD_BUTTON_WIDTH - 10) - PANE_TAB_SPACING);
       WidthScale := 1;
       if TotalWidth > AvailableWidth then
         WidthScale := Max(0, AvailableWidth -
-          6 * Max(0, VisibleCount - 1)) /
-          Max(1, TotalWidth - 6 * Max(0, VisibleCount - 1));
+          PANE_TAB_SPACING * Max(0, VisibleCount - 1)) /
+          Max(1, TotalWidth - PANE_TAB_SPACING * Max(0, VisibleCount - 1));
 
       for I := 0 to FTabButtons.Count - 1 do
       begin
@@ -2477,16 +2480,16 @@ begin
 
     if FTabPosition in [dtpLeft, dtpRight] then
     begin
-      Btn.Position.X := 4;
+      Btn.Position.X := PANE_TAB_CROSS_MARGIN;
       Btn.Position.Y := Pos;
-      Pos := Pos + Btn.Height + 6;
+      Pos := Pos + Btn.Height + PANE_TAB_SPACING;
     end
     else
     begin
       Btn.Position.X := Pos;
-      Btn.Position.Y := 8;
-      Btn.Height := BarSize - 16;
-      Pos := Pos + Btn.Width + 6;
+      Btn.Position.Y := PANE_TAB_CROSS_MARGIN;
+      Btn.Height := BarSize - PANE_TAB_CROSS_MARGIN * 2;
+      Pos := Pos + Btn.Width + PANE_TAB_SPACING;
     end;
   end;
 end;
@@ -2509,11 +2512,11 @@ begin
     if FTabPosition in [dtpLeft, dtpRight] then
     begin
       FAddButton.Position.X := (BarSize - BtnSize) / 2;
-      FAddButton.Position.Y := FTabBar.Height - BtnSize - 8;
+      FAddButton.Position.Y := FTabBar.Height - BtnSize - PANE_TAB_MARGIN;
     end
     else
     begin
-      FAddButton.Position.X := FTabBar.Width - BtnSize - 8;
+      FAddButton.Position.X := FTabBar.Width - BtnSize - PANE_TAB_MARGIN;
       FAddButton.Position.Y := (BarSize - BtnSize) / 2;
     end;
     if FAddButton.Visible then
@@ -2560,7 +2563,7 @@ begin
   if not FVisibleTabs then Exit;
 
   BarSize := FTabBarSize;
-  Pos := 8;
+  Pos := PANE_TAB_MARGIN;
   for I := 0 to FTabs.Count - 1 do
   begin
     if IsEmptyTab(FTabs[I]) then Continue;
@@ -2616,21 +2619,21 @@ begin
       Txt.Margins.Right := PANE_TAB_CLOSE_SIZE + 8;
     if not IsHorizontal then
     begin
-      BtnWidth := BarSize - 8;
+      BtnWidth := BarSize - PANE_TAB_CROSS_MARGIN * 2;
       BtnHeight := 88;
-      Btn.Position.X := 4;
+      Btn.Position.X := PANE_TAB_CROSS_MARGIN;
       Btn.Position.Y := Pos;
-      Pos := Pos + BtnHeight + 6;
+      Pos := Pos + BtnHeight + PANE_TAB_SPACING;
     end
     else
     begin
       BtnWidth := Max(PANE_TAB_MIN_WIDTH,
         Ceil(MeasureCaptionWidth(Txt.Text)) + PANE_TAB_CLOSE_SIZE +
           PANE_TAB_TEXT_PADDING);
-      BtnHeight := BarSize - 16;
+      BtnHeight := BarSize - PANE_TAB_CROSS_MARGIN * 2;
       Btn.Position.X := Pos;
-      Btn.Position.Y := 8;
-      Pos := Pos + BtnWidth + 6;
+      Btn.Position.Y := PANE_TAB_CROSS_MARGIN;
+      Pos := Pos + BtnWidth + PANE_TAB_SPACING;
     end;
     Btn.Width := BtnWidth;
     Btn.Height := BtnHeight;
