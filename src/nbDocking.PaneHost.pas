@@ -52,6 +52,10 @@ type
   TPaneHostTabEvent = procedure(Sender: TObject; AIndex: Integer) of object;
   TPaneHostTabContextEvent = procedure(Sender: TObject; AIndex: Integer;
     const AScreenPoint: TPointF) of object;
+  TPaneHostTabDragMoveEvent = procedure(Sender: TObject; AIndex: Integer;
+    const AScreenPoint: TPointF) of object;
+  TPaneHostTabDragEndEvent = procedure(Sender: TObject; AIndex: Integer;
+    const AScreenPoint: TPointF; var AHandled: Boolean) of object;
   TDesignChildrenLayoutMode = (dlmSplit, dlmAlign);
   TnbDockingTabPosition = (dtpTop, dtpBottom, dtpLeft, dtpRight);
   TnbDockingTabTextDirection = (ttdAuto, ttdHorizontal, ttdVertical);
@@ -141,12 +145,15 @@ type
     FTabDragHit: TDropHitResult;
     FTabDragTargetIsRoot: Boolean;
     FOnContentNeeded: TContentFactoryEvent;
+    FOnAddRequested: TNotifyEvent;
     FOnActiveLeafChanged: TActiveLeafChangeEvent;
     FOnContentHeaderChanged: TContentHeaderChangeEvent;
     FOnActiveTabChanged: TPaneHostTabChangeEvent;
     FOnTabClosed: TPaneHostTabEvent;
     FOnTabInvoked: TPaneHostTabEvent;
     FOnTabContext: TPaneHostTabContextEvent;
+    FOnTabDragMove: TPaneHostTabDragMoveEvent;
+    FOnTabDragEnd: TPaneHostTabDragEndEvent;
     FOnHeaderDrag: TPaneHeaderDragEvent;
     FOnFocusModeChanged: TNotifyEvent;
     FFocusMode: Boolean;
@@ -316,6 +323,16 @@ type
     function AddTab(const ACaption: string = 'New tab'): Integer;
     function AddTabWithContent(const ACaption: string;
       AContent: TnbDockingPaneContent): Integer;
+    function AddTabWithTree(const ACaption: string; ANode: TPaneNode;
+      AActiveLeaf: TPaneLeaf = nil): Integer;
+    function TakeTabTree(AIndex: Integer; out ACaption: string;
+      out AActiveLeaf: TPaneLeaf): TPaneNode;
+    procedure UpdateExternalTabDrag(const AScreenPoint: TPointF);
+    procedure CancelExternalTabDrag;
+    function IsScreenPointOverTabBar(
+      const AScreenPoint: TPointF): Boolean;
+    function DockTreeAtScreenPoint(const AScreenPoint: TPointF;
+      ANode: TPaneNode; AActiveLeaf: TPaneLeaf = nil): Boolean;
     procedure ActivateTab(AIndex: Integer);
     procedure CloseTab(AIndex: Integer);
     function TabCaption(AIndex: Integer): string;
@@ -330,6 +347,7 @@ type
     property ActiveTabIndex: Integer read GetActiveTabIndex;
     property FocusMode: Boolean read FFocusMode write SetFocusMode;
     property TabBarControl: TRectangle read FTabBar;
+    property AddButtonControl: TRectangle read FAddButton;
   published
     property BackgroundColor: TAlphaColor read FBackgroundColor
       write SetBackgroundColor;
@@ -372,6 +390,8 @@ type
       read FTabTextDirection write SetTabTextDirection default ttdAuto;
     property OnContentNeeded: TContentFactoryEvent read FOnContentNeeded
       write FOnContentNeeded;
+    property OnAddRequested: TNotifyEvent read FOnAddRequested
+      write FOnAddRequested;
     property OnActiveLeafChanged: TActiveLeafChangeEvent
       read FOnActiveLeafChanged write FOnActiveLeafChanged;
     property OnContentHeaderChanged: TContentHeaderChangeEvent
@@ -384,6 +404,10 @@ type
       write FOnTabInvoked;
     property OnTabContext: TPaneHostTabContextEvent read FOnTabContext
       write FOnTabContext;
+    property OnTabDragMove: TPaneHostTabDragMoveEvent read FOnTabDragMove
+      write FOnTabDragMove;
+    property OnTabDragEnd: TPaneHostTabDragEndEvent read FOnTabDragEnd
+      write FOnTabDragEnd;
     property OnHeaderDrag: TPaneHeaderDragEvent read FOnHeaderDrag
       write FOnHeaderDrag;
     property OnFocusModeChanged: TNotifyEvent read FOnFocusModeChanged
@@ -1770,6 +1794,193 @@ begin
     ActivateTabIndex(Result);
 end;
 
+function TnbDockingPaneHost.AddTabWithTree(const ACaption: string;
+  ANode: TPaneNode; AActiveLeaf: TPaneLeaf): Integer;
+begin
+  Result := -1;
+  if ANode = nil then Exit;
+  Result := AddTab(ACaption);
+  ReplaceTabTree(Result, ANode, AActiveLeaf);
+end;
+
+function TnbDockingPaneHost.TakeTabTree(AIndex: Integer;
+  out ACaption: string; out AActiveLeaf: TPaneLeaf): TPaneNode;
+var
+  Tab: TPaneHostTab;
+  NewIndex: Integer;
+begin
+  Result := nil;
+  ACaption := '';
+  AActiveLeaf := nil;
+  if (FTabs = nil) or (AIndex < 0) or (AIndex >= FTabs.Count) then Exit;
+
+  if AIndex = FActiveTabIndex then
+    SaveActiveTabState;
+  Tab := FTabs[AIndex];
+  ACaption := Tab.Caption;
+  AActiveLeaf := Tab.ActiveLeaf;
+  Tab.Tree.EnumerateLeaves(
+    procedure(ALeaf: TPaneLeaf)
+    begin
+      if (ALeaf <> nil) and (ALeaf.Content <> nil) then
+      begin
+        UnwireContent(ALeaf.Content);
+        ALeaf.Content.Parent := nil;
+      end;
+    end);
+  Tab.Tree.OnChanged := nil;
+  Result := Tab.Tree.ExtractRoot;
+
+  if AIndex = FActiveTabIndex then
+  begin
+    FActiveLeaf := nil;
+    FTree := nil;
+    FActiveTabIndex := -1;
+  end
+  else if AIndex < FActiveTabIndex then
+    Dec(FActiveTabIndex);
+  FTabs.Delete(AIndex);
+  if FTabs.Count = 0 then
+    EnsurePrimaryTab;
+
+  if FActiveTabIndex < 0 then
+  begin
+    if (FTabs.Count = 1) and IsEmptyTab(FTabs[0]) then
+    begin
+      FTree := FTabs[0].Tree;
+      RebuildVisualTree;
+      RebuildTabButtons;
+    end
+    else
+    begin
+      NewIndex := AIndex;
+      if NewIndex >= FTabs.Count then
+        NewIndex := FTabs.Count - 1;
+      ActivateTabIndex(NewIndex);
+    end;
+  end
+  else
+    RebuildTabButtons;
+end;
+
+procedure TnbDockingPaneHost.UpdateExternalTabDrag(
+  const AScreenPoint: TPointF);
+var
+  LocalPoint: TPointF;
+  TargetLeaf: TPaneLeaf;
+  Hit: TDropHitResult;
+begin
+  if IsPointOverTabBar(AScreenPoint) then
+  begin
+    ClearDropOverlay;
+    SetTabBarDropHighlight(True);
+    Exit;
+  end;
+
+  SetTabBarDropHighlight(False);
+  LocalPoint := ScreenToLocal(AScreenPoint);
+  if TryShowRootDrop(LocalPoint, Hit) then Exit;
+
+  TargetLeaf := FindLeafAt(LocalPoint);
+  if TargetLeaf = nil then
+  begin
+    ClearDropOverlay;
+    Exit;
+  end;
+
+  FDropOverlay.Parent := Self;
+  FDropOverlay.ShowAt(LeafBounds(TargetLeaf));
+  Hit := FDropOverlay.HitTestZone(LocalPoint.X, LocalPoint.Y);
+  FDropOverlay.Highlight(Hit);
+end;
+
+procedure TnbDockingPaneHost.CancelExternalTabDrag;
+begin
+  ClearDropOverlay;
+end;
+
+function TnbDockingPaneHost.IsScreenPointOverTabBar(
+  const AScreenPoint: TPointF): Boolean;
+begin
+  Result := IsPointOverTabBar(AScreenPoint);
+end;
+
+function TnbDockingPaneHost.DockTreeAtScreenPoint(
+  const AScreenPoint: TPointF; ANode: TPaneNode;
+  AActiveLeaf: TPaneLeaf): Boolean;
+
+  procedure WireNode(ACurrent: TPaneNode);
+  var
+    Split: TPaneSplit;
+    I: Integer;
+  begin
+    if ACurrent = nil then Exit;
+    if ACurrent is TPaneLeaf then
+    begin
+      if TPaneLeaf(ACurrent).Content <> nil then
+      begin
+        TPaneLeaf(ACurrent).Content.Parent := nil;
+        WireContent(TPaneLeaf(ACurrent).Content);
+      end;
+      Exit;
+    end;
+
+    Split := ACurrent.AsSplit;
+    if Split = nil then Exit;
+    for I := 0 to Split.ChildCount - 1 do
+      WireNode(Split.Children[I]);
+  end;
+
+var
+  LocalPoint: TPointF;
+  TargetLeaf: TPaneLeaf;
+  Hit: TDropHitResult;
+  TargetIsRoot: Boolean;
+begin
+  Result := False;
+  if (ANode = nil) or (FTree = nil) or (FTree.Root = nil) then Exit;
+
+  LocalPoint := ScreenToLocal(AScreenPoint);
+  TargetIsRoot := TryShowRootDrop(LocalPoint, Hit);
+  TargetLeaf := nil;
+  if not TargetIsRoot then
+  begin
+    TargetLeaf := FindLeafAt(LocalPoint);
+    if TargetLeaf = nil then
+    begin
+      ClearDropOverlay;
+      Exit;
+    end;
+    FDropOverlay.Parent := Self;
+    FDropOverlay.ShowAt(LeafBounds(TargetLeaf));
+    Hit := FDropOverlay.HitTestZone(LocalPoint.X, LocalPoint.Y);
+    FDropOverlay.Highlight(Hit);
+  end;
+  ClearDropOverlay;
+  if not Hit.HasZone then Exit;
+
+  WireNode(ANode);
+  FBuilding := True;
+  try
+    if TargetIsRoot then
+      FTree.SplitRootWithNode(Hit.Direction, ANode)
+    else
+      FTree.SplitLeafWithNode(TargetLeaf, Hit.Direction, ANode);
+  finally
+    FBuilding := False;
+  end;
+
+  if AActiveLeaf = nil then
+    AActiveLeaf := FTree.FirstLeaf;
+  InternalSetActive(AActiveLeaf);
+  if (FTabs <> nil) and (FActiveTabIndex >= 0)
+     and (FActiveTabIndex < FTabs.Count) then
+    UpdateTabCaptionFromTree(FTabs[FActiveTabIndex]);
+  RebuildVisualTree;
+  RebuildTabButtons;
+  Result := True;
+end;
+
 procedure TnbDockingPaneHost.ActivateTab(AIndex: Integer);
 begin
   ActivateTabIndex(AIndex);
@@ -2115,6 +2326,8 @@ begin
   begin
     ScreenPt := TControl(Sender).LocalToScreen(PointF(X, Y));
     UpdateTabDrag(ScreenPt);
+    if Assigned(FOnTabDragMove) then
+      FOnTabDragMove(Self, FTabDragIndex, ScreenPt);
   end;
 end;
 
@@ -2124,6 +2337,7 @@ var
   TabIndex: Integer;
   WasDragging: Boolean;
   ScreenPt: TPointF;
+  Handled: Boolean;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
   if not (Sender is TControl) then Exit;
@@ -2134,7 +2348,15 @@ begin
   ScreenPt := TControl(Sender).LocalToScreen(PointF(X, Y));
 
   if WasDragging then
-    FinishTabDrag(ScreenPt)
+  begin
+    Handled := False;
+    if Assigned(FOnTabDragEnd) then
+      FOnTabDragEnd(Self, TabIndex, ScreenPt, Handled);
+    if Handled then
+      CancelTabDrag
+    else
+      FinishTabDrag(ScreenPt);
+  end
   else
   begin
     CancelTabDrag;
@@ -2685,6 +2907,12 @@ var
   Caption: string;
 begin
   if Button <> TMouseButton.mbLeft then Exit;
+
+  if Assigned(FOnAddRequested) then
+  begin
+    FOnAddRequested(Self);
+    Exit;
+  end;
 
   Content := nil;
   if Assigned(FOnContentNeeded) then

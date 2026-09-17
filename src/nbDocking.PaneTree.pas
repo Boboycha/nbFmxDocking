@@ -83,6 +83,7 @@ type
     FRoot: TPaneNode;
     FOnChanged: TPaneTreeChangeEvent;
     procedure DoChanged;
+    procedure AdoptNode(ANode: TPaneNode);
     function DirectionToOrientation(ADir: TSplitDirection): TPaneOrientation;
     function DirectionInsertsBefore(ADir: TSplitDirection): Boolean;
     procedure CollapseSingleChild(ASplit: TPaneSplit);
@@ -92,11 +93,16 @@ type
 
     procedure Clear;
     procedure SetRootNode(ANode: TPaneNode);
+    function ExtractRoot: TPaneNode;
     function SetRootContent(AContent: TnbDockingPaneContent): TPaneLeaf;
     function SplitRoot(ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent): TPaneLeaf;
+    procedure SplitRootWithNode(ADirection: TSplitDirection;
+      ANewNode: TPaneNode);
     function SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
       ANewContent: TnbDockingPaneContent): TPaneLeaf;
+    procedure SplitLeafWithNode(ALeaf: TPaneLeaf;
+      ADirection: TSplitDirection; ANewNode: TPaneNode);
     procedure CloseLeaf(ALeaf: TPaneLeaf);
 
     function FirstLeaf: TPaneLeaf;
@@ -347,9 +353,34 @@ end;
 procedure TPaneTree.SetRootNode(ANode: TPaneNode);
 begin
   if ANode <> nil then
+  begin
     ANode.FParent := nil;
+    AdoptNode(ANode);
+  end;
   FRoot.Free;
   FRoot := ANode;
+  DoChanged;
+end;
+
+procedure TPaneTree.AdoptNode(ANode: TPaneNode);
+var
+  Split: TPaneSplit;
+  I: Integer;
+begin
+  if ANode = nil then Exit;
+  ANode.FOwnerTree := Self;
+  Split := ANode.AsSplit;
+  if Split = nil then Exit;
+  for I := 0 to Split.ChildCount - 1 do
+    AdoptNode(Split.Children[I]);
+end;
+
+function TPaneTree.ExtractRoot: TPaneNode;
+begin
+  Result := FRoot;
+  FRoot := nil;
+  if Result <> nil then
+    Result.FParent := nil;
   DoChanged;
 end;
 
@@ -388,11 +419,6 @@ end;
 
 function TPaneTree.SplitRoot(ADirection: TSplitDirection;
   ANewContent: TnbDockingPaneContent): TPaneLeaf;
-var
-  OldRoot: TPaneNode;
-  NewRoot: TPaneSplit;
-  TargetOrient: TPaneOrientation;
-  InsertBefore: Boolean;
 begin
   if ANewContent = nil then
     raise EDockingError.Create('TPaneTree.SplitRoot: nil content');
@@ -400,24 +426,47 @@ begin
   if FRoot = nil then
     Exit(SetRootContent(ANewContent));
 
+  Result := TPaneLeaf.Create(Self, ANewContent);
+  SplitRootWithNode(ADirection, Result);
+end;
+
+procedure TPaneTree.SplitRootWithNode(ADirection: TSplitDirection;
+  ANewNode: TPaneNode);
+var
+  OldRoot: TPaneNode;
+  NewRoot: TPaneSplit;
+  TargetOrient: TPaneOrientation;
+  InsertBefore: Boolean;
+begin
+  if ANewNode = nil then
+    raise EDockingError.Create('TPaneTree.SplitRootWithNode: nil node');
+  if ANewNode.Parent <> nil then
+    raise EDockingError.Create('TPaneTree.SplitRootWithNode: node has parent');
+
+  if FRoot = nil then
+  begin
+    SetRootNode(ANewNode);
+    Exit;
+  end;
+
   TargetOrient := DirectionToOrientation(ADirection);
   InsertBefore := DirectionInsertsBefore(ADirection);
   OldRoot := FRoot;
   NewRoot := TPaneSplit.Create(Self, TargetOrient);
-  Result := TPaneLeaf.Create(Self, ANewContent);
+  AdoptNode(ANewNode);
 
   FRoot := NewRoot;
   OldRoot.FParent := nil;
 
   if InsertBefore then
   begin
-    NewRoot.InsertChild(0, Result, 0.5);
+    NewRoot.InsertChild(0, ANewNode, 0.5);
     NewRoot.InsertChild(1, OldRoot, 0.5);
   end
   else
   begin
     NewRoot.InsertChild(0, OldRoot, 0.5);
-    NewRoot.InsertChild(1, Result, 0.5);
+    NewRoot.InsertChild(1, ANewNode, 0.5);
   end;
 
   DoChanged;
@@ -425,12 +474,6 @@ end;
 
 function TPaneTree.SplitLeaf(ALeaf: TPaneLeaf; ADirection: TSplitDirection;
   ANewContent: TnbDockingPaneContent): TPaneLeaf;
-var
-  TargetOrient: TPaneOrientation;
-  InsertBefore: Boolean;
-  ParentSplit, WrappingSplit: TPaneSplit;
-  NewLeaf: TPaneLeaf;
-  LeafIdx: Integer;
 begin
   if ALeaf = nil then
     raise EDockingError.Create('TPaneTree.SplitLeaf: nil leaf');
@@ -438,19 +481,40 @@ begin
     raise EDockingError.Create('TPaneTree.SplitLeaf: nil content');
   if ALeaf.OwnerTree <> Self then
     raise EDockingError.Create('TPaneTree.SplitLeaf: leaf belongs to another tree');
+  Result := TPaneLeaf.Create(Self, ANewContent);
+  SplitLeafWithNode(ALeaf, ADirection, Result);
+end;
+
+procedure TPaneTree.SplitLeafWithNode(ALeaf: TPaneLeaf;
+  ADirection: TSplitDirection; ANewNode: TPaneNode);
+var
+  TargetOrient: TPaneOrientation;
+  InsertBefore: Boolean;
+  ParentSplit, WrappingSplit: TPaneSplit;
+  LeafIdx: Integer;
+begin
+  if ALeaf = nil then
+    raise EDockingError.Create('TPaneTree.SplitLeafWithNode: nil leaf');
+  if ANewNode = nil then
+    raise EDockingError.Create('TPaneTree.SplitLeafWithNode: nil node');
+  if ALeaf.OwnerTree <> Self then
+    raise EDockingError.Create(
+      'TPaneTree.SplitLeafWithNode: leaf belongs to another tree');
+  if ANewNode.Parent <> nil then
+    raise EDockingError.Create('TPaneTree.SplitLeafWithNode: node has parent');
 
   TargetOrient := DirectionToOrientation(ADirection);
   InsertBefore := DirectionInsertsBefore(ADirection);
-  NewLeaf := TPaneLeaf.Create(Self, ANewContent);
+  AdoptNode(ANewNode);
   ParentSplit := ALeaf.Parent;
 
   if (ParentSplit <> nil) and (ParentSplit.Orientation = TargetOrient) then
   begin
     LeafIdx := ParentSplit.IndexOfChild(ALeaf);
     if InsertBefore then
-      ParentSplit.InsertChild(LeafIdx, NewLeaf)
+      ParentSplit.InsertChild(LeafIdx, ANewNode)
     else
-      ParentSplit.InsertChild(LeafIdx + 1, NewLeaf);
+      ParentSplit.InsertChild(LeafIdx + 1, ANewNode);
   end
   else
   begin
@@ -467,17 +531,16 @@ begin
 
     if InsertBefore then
     begin
-      WrappingSplit.InsertChild(0, NewLeaf, 0.5);
+      WrappingSplit.InsertChild(0, ANewNode, 0.5);
       WrappingSplit.InsertChild(1, ALeaf, 0.5);
     end
     else
     begin
       WrappingSplit.InsertChild(0, ALeaf, 0.5);
-      WrappingSplit.InsertChild(1, NewLeaf, 0.5);
+      WrappingSplit.InsertChild(1, ANewNode, 0.5);
     end;
   end;
 
-  Result := NewLeaf;
   DoChanged;
 end;
 
