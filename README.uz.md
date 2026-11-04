@@ -268,3 +268,8 @@ Tavsiya etiladigan runtime smoke-test:
 5. Tablar orasida o'ting.
 6. `+` bosing.
 7. Bitta pane'li tabni aktiv guruhga qaytarib sudrang.
+
+## Litsenziya
+
+Loyiha Mozilla Public License 2.0 asosida tarqatiladi. Shartlar
+[LICENSE](LICENSE) faylida keltirilgan.

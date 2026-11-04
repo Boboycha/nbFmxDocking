@@ -268,3 +268,8 @@ Recommended runtime smoke-test:
 5. Switch between tabs.
 6. Press `+`.
 7. Drag a single-pane tab back into the active group.
+
+## License
+
+The project is licensed under the Mozilla Public License 2.0. See
+[LICENSE](LICENSE).

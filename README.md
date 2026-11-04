@@ -267,3 +267,8 @@ msbuild demo\DockingDesignTest.dproj /t:Build /p:Config=Debug /p:Platform=Win64
 5. Переключить вкладки.
 6. Нажать `+`.
 7. Перетащить одиночную вкладку обратно в активную группу.
+
+## Лицензия
+
+Проект распространяется по Mozilla Public License 2.0. Условия находятся в
+файле [LICENSE](LICENSE).
