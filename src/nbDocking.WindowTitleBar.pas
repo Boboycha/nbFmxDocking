@@ -24,6 +24,8 @@ type
     FCloseButton: TControl;
     FMinButton: TControl;
     FEnabled: Boolean;
+    FMacUnifiedTitleBar: Boolean;
+    FMacSystemButtonsInset: Single;
 
 {$IFDEF MSWINDOWS}
     FSubclassInstalled: Boolean;
@@ -45,7 +47,28 @@ type
     function IsValidWindow(HWND: HWND): Boolean;
 {$ENDIF}
 {$IFDEF MACOS}
+    FMacTitleDragControl: TControl;
+    FMacPreviousMouseDown: TMouseEvent;
+    FMacPreviousDblClick: TNotifyEvent;
+    FMacOriginalHitTest: Boolean;
+    FMacOriginalMovable: Boolean;
+    FMacMovableSaved: Boolean;
+    FMacPreviousResize: TNotifyEvent;
+    FMacPreviousActivate: TNotifyEvent;
+    FMacResizeInstalled: Boolean;
+    FMacUpdating: Boolean;
+    FMacWindowObserver: TObject;
     procedure SetupMacWindow;
+    procedure UpdateMacSystemButtons;
+    procedure MacFinishWindowDrag;
+    procedure MacTitleDblClick(Sender: TObject);
+    procedure MacPerformTitleDoubleClick;
+    procedure InstallMacTitleHandlers;
+    procedure RemoveMacTitleHandlers;
+    procedure MacFormResize(Sender: TObject);
+    procedure MacFormActivate(Sender: TObject);
+    procedure MacTitleMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Single);
 {$ENDIF}
 {$IFDEF LINUX}
     FLinuxHandlersInstalled: Boolean;
@@ -89,6 +112,7 @@ type
     procedure LinuxMaxClick(Sender: TObject);
     procedure LinuxCloseClick(Sender: TObject);
 {$ENDIF}
+    procedure SetMacUnifiedTitleBar(const Value: Boolean);
     procedure SetEnabled(const Value: Boolean);
 
     procedure SetTitleControl(const Value: TControl);
@@ -113,12 +137,16 @@ type
     /// Применяет настройки к окну-владельцу. Вызывать после создания всех контролов.
     /// </summary>
     procedure Apply;
+    property MacSystemButtonsInset: Single read FMacSystemButtonsInset;
 
 {$IFDEF MSWINDOWS}
     property DebugMode: Boolean read FDebugMode write FDebugMode;
 {$ENDIF}
   published
     property Enabled: Boolean read FEnabled write SetEnabled default True;
+    // Opt-in: reserve MacSystemButtonsInset at the left of a full-width header.
+    property MacUnifiedTitleBar: Boolean read FMacUnifiedTitleBar
+      write SetMacUnifiedTitleBar default False;
     property TitleControl: TControl read FTitleControl write SetTitleControl;
     property DockingHost: TnbDockingPaneHost read FDockingHost write SetDockingHost;
     property SystemButtons: TControl read FSystemButtons write SetSystemButtons;
@@ -161,7 +189,7 @@ const
 {$IFDEF MACOS}
 
 uses
-  Macapi.AppKit, Macapi.Foundation, Macapi.CocoaTypes, Macapi.ObjectiveC,
+  Macapi.AppKit, Macapi.Foundation, Macapi.CocoaTypes, Macapi.ObjectiveC, Macapi.Helpers, Macapi.ObjCRuntime,
   FMX.Platform.Mac, FMX.Helpers.Mac;
 {$ENDIF}
 { TnbWindowTitleBar }
@@ -184,6 +212,9 @@ end;
 
 destructor TnbWindowTitleBar.Destroy;
 begin
+{$IFDEF MACOS}
+  if not (csDesigning in ComponentState) then RemoveMacTitleHandlers;
+{$ENDIF}
   if FDockingHost <> nil then
     FDockingHost.SetTabBarHost(nil);
   if not(csDesigning in ComponentState) then
@@ -209,6 +240,10 @@ begin
   inherited;
   if Operation = opRemove then
   begin
+{$IFDEF MACOS}
+    if AComponent = FMacTitleDragControl then
+      FMacTitleDragControl := nil;
+{$ENDIF}
     if AComponent = FTitleControl then
     begin
       FTitleControl := nil;
@@ -270,6 +305,15 @@ begin
 {$ENDIF}
 end;
 
+procedure TnbWindowTitleBar.SetMacUnifiedTitleBar(const Value: Boolean);
+begin
+  if FMacUnifiedTitleBar = Value then Exit;
+  FMacUnifiedTitleBar := Value;
+{$IFDEF MACOS}
+  if FEnabled and (FForm <> nil) and not (csDesigning in ComponentState) and
+    not (csLoading in ComponentState) then Apply;
+{$ENDIF}
+end;
 procedure TnbWindowTitleBar.SetEnabled(const Value: Boolean);
 {$IFDEF MSWINDOWS}
 var
@@ -294,6 +338,9 @@ begin
     if h <> 0 then
       SetWindowPos(h, 0, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or
         SWP_FRAMECHANGED or SWP_NOACTIVATE);
+{$ENDIF}
+{$IFDEF MACOS}
+    RemoveMacTitleHandlers;
 {$ENDIF}
 {$IFDEF LINUX}
     RemoveLinuxHandlers;
@@ -334,7 +381,7 @@ end;
 
 function TnbWindowTitleBar.EffectiveTitleControl: TControl;
 begin
-{$IFDEF LINUX}
+{$IF Defined(LINUX) or Defined(MACOS)}
   if FDockingHost <> nil then
     Result := FDockingHost.TabBarControl
   else
@@ -521,22 +568,18 @@ end;
 
 function TnbWindowTitleBar.ScreenToLogical(const AScreenPoint: TPoint): TPointF;
 var
-  ScreenService: IFMXScreenService;
   Scale: Single;
-  WinRect: TRect;
   h: HWND;
   LocalP: TPoint;
 begin
   h := FmxHandleToHWND(FForm.Handle);
-  GetWindowRect(h, WinRect);
+  LocalP := AScreenPoint;
+  if not Winapi.Windows.ScreenToClient(h, LocalP) then
+    RaiseLastOSError;
 
-  LocalP.X := AScreenPoint.X - WinRect.Left;
-  LocalP.Y := AScreenPoint.Y - WinRect.Top;
-
-  if TPlatformServices.Current.SupportsPlatformService(IFMXScreenService,
-    ScreenService) then
-    Scale := ScreenService.GetScreenScale
-  else
+  // The scene follows this window's monitor, not the primary display's DPI.
+  Scale := FForm.Handle.Scale;
+  if Scale <= 0 then
     Scale := 1.0;
 
   Result.X := LocalP.X / Scale;
@@ -734,8 +777,9 @@ begin
       WM_NCHITTEST:
         begin
           DebugLog('WM_NCHITTEST received');
-          Pt.X := LOWORD(lParam);
-          Pt.Y := HIWORD(lParam);
+          // WM_NCHITTEST uses signed screen coordinates on multi-monitor desktops.
+          Pt.X := SmallInt(LOWORD(lParam));
+          Pt.Y := SmallInt(HIWORD(lParam));
 
           var
           P := ScreenToLogical(Pt);
@@ -1285,21 +1329,284 @@ end;
 {$ENDIF}
 {$IFDEF MACOS}
 
-procedure TnbWindowTitleBar.SetupMacWindow;
+type
+  TnbMacFormAccess = class(TCommonCustomForm);
+  TnbMacControlAccess = class(TControl);
+  NSWindowDrag = interface(NSWindow)
+    ['{D1B6EA3B-C51C-4BDE-8465-538E8F81982A}']
+    procedure performWindowDragWithEvent(event: NSEvent); cdecl;
+  end;
+  TNSWindowDrag = class(TOCGenericImport<NSWindowClass, NSWindowDrag>);
+
+  InbMacWindowObserver = interface(IObjectiveC)
+    ['{7C03BF1A-C790-43FA-844F-C2F016DB0D60}']
+    procedure windowUpdated(notification: NSNotification); cdecl;
+  end;
+  TnbMacWindowObserver = class(TOCLocal, InbMacWindowObserver)
+  private
+    FOwner: TnbWindowTitleBar;
+  public
+    constructor Create(AOwner: TnbWindowTitleBar);
+    procedure windowUpdated(notification: NSNotification); cdecl;
+    property NativeID: Pointer read GetObjectID;
+  end;
+
+constructor TnbMacWindowObserver.Create(AOwner: TnbWindowTitleBar);
+begin
+  inherited Create;
+  FOwner := AOwner;
+end;
+
+procedure TnbMacWindowObserver.windowUpdated(notification: NSNotification);
+begin
+  if (FOwner <> nil) and FOwner.FEnabled and FOwner.FMacUnifiedTitleBar then
+  begin
+    TThread.RemoveQueuedEvents(FOwner.UpdateMacSystemButtons);
+    TThread.ForceQueue(nil, FOwner.UpdateMacSystemButtons);
+  end;
+end;
+procedure TnbWindowTitleBar.InstallMacTitleHandlers;
+var Title: TControl; Name: NSString; Wnd: NSWindow;
+begin
+  Title := EffectiveTitleControl;
+  if FMacTitleDragControl <> Title then
+  begin
+    RemoveMacTitleHandlers;
+    if Title <> nil then
+    begin
+      FMacTitleDragControl := Title;
+      Title.FreeNotification(Self);
+      FMacPreviousMouseDown := Title.OnMouseDown;
+      FMacPreviousDblClick := Title.OnDblClick;
+      FMacOriginalHitTest := Title.HitTest;
+      Title.HitTest := True;
+      Title.OnMouseDown := MacTitleMouseDown;
+      Title.OnDblClick := MacTitleDblClick;
+    end;
+  end;
+  if not FMacResizeInstalled then
+  begin
+    FMacPreviousResize := TnbMacFormAccess(FForm).OnResize;
+    TnbMacFormAccess(FForm).OnResize := MacFormResize;
+    FMacPreviousActivate := TnbMacFormAccess(FForm).OnActivate;
+    TnbMacFormAccess(FForm).OnActivate := MacFormActivate;
+    FMacResizeInstalled := True;
+  end;
+  if FMacWindowObserver = nil then
+  begin
+    FMacWindowObserver := TnbMacWindowObserver.Create(Self);
+    Wnd := WindowHandleToPlatform(FForm.Handle).Wnd;
+    Name := CocoaNSStringConst('/System/Library/Frameworks/AppKit.framework/AppKit',
+      'NSWindowDidUpdateNotification');
+    TNSNotificationCenter.Wrap(TNSNotificationCenter.OCClass.defaultCenter).addObserver(
+      TnbMacWindowObserver(FMacWindowObserver).NativeID, sel_getUid('windowUpdated:'),
+      NSObjectToID(Name), NSObjectToID(Wnd));
+  end;
+end;
+
+procedure TnbWindowTitleBar.RemoveMacTitleHandlers;
+var WinHandle: TMacWindowHandle;
+begin
+  if FMacMovableSaved then
+  begin
+    if (FForm <> nil) and not (csDestroying in FForm.ComponentState) then
+    begin
+      WinHandle := WindowHandleToPlatform(FForm.Handle);
+      if WinHandle <> nil then WinHandle.Wnd.setMovable(FMacOriginalMovable);
+    end;
+    FMacMovableSaved := False;
+  end;
+  TThread.RemoveQueuedEvents(MacFinishWindowDrag);
+  TThread.RemoveQueuedEvents(MacPerformTitleDoubleClick);
+  TThread.RemoveQueuedEvents(UpdateMacSystemButtons);
+  if FMacWindowObserver <> nil then
+  begin
+    TNSNotificationCenter.Wrap(TNSNotificationCenter.OCClass.defaultCenter).removeObserver(
+      TnbMacWindowObserver(FMacWindowObserver).NativeID);
+    FreeAndNil(FMacWindowObserver);
+  end;
+  if FMacTitleDragControl <> nil then
+  begin
+    if not (csDestroying in FMacTitleDragControl.ComponentState) then
+    begin
+      FMacTitleDragControl.OnMouseDown := FMacPreviousMouseDown;
+      FMacTitleDragControl.OnDblClick := FMacPreviousDblClick;
+      FMacTitleDragControl.HitTest := FMacOriginalHitTest;
+      if FMacTitleDragControl <> FTitleControl then
+        FMacTitleDragControl.RemoveFreeNotification(Self);
+    end;
+    FMacTitleDragControl := nil;
+  end;
+  FMacPreviousMouseDown := nil;
+  FMacPreviousDblClick := nil;
+  if FMacResizeInstalled then
+  begin
+    if FForm <> nil then
+    begin
+      TnbMacFormAccess(FForm).OnResize := FMacPreviousResize;
+      TnbMacFormAccess(FForm).OnActivate := FMacPreviousActivate;
+    end;
+    FMacResizeInstalled := False;
+    FMacPreviousResize := nil;
+    FMacPreviousActivate := nil;
+  end;
+end;
+
+procedure TnbWindowTitleBar.MacFormResize(Sender: TObject);
+begin
+  if Assigned(FMacPreviousResize) then FMacPreviousResize(Sender);
+  if FMacUnifiedTitleBar then
+  begin
+    UpdateMacSystemButtons;
+    TThread.RemoveQueuedEvents(UpdateMacSystemButtons);
+    TThread.ForceQueue(nil, UpdateMacSystemButtons);
+  end;
+end;
+
+procedure TnbWindowTitleBar.MacFormActivate(Sender: TObject);
+begin
+  if Assigned(FMacPreviousActivate) then FMacPreviousActivate(Sender);
+  TThread.RemoveQueuedEvents(UpdateMacSystemButtons);
+  TThread.ForceQueue(nil, UpdateMacSystemButtons);
+end;
+
+procedure TnbWindowTitleBar.MacTitleMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+var Wnd: NSWindow; Event: NSEvent;
+begin
+  if Assigned(FMacPreviousMouseDown) then
+    FMacPreviousMouseDown(Sender, Button, Shift, X, Y);
+  if not FEnabled or not FMacUnifiedTitleBar or (FForm = nil) or
+    (Button <> TMouseButton.mbLeft) or (ssCtrl in Shift) then Exit;
+  // Let FMX dispatch its DblClick event instead of handing it to native drag.
+  if ssDouble in Shift then Exit;
+  // Only the header background gets this handler; child tabs/buttons keep theirs.
+  Event := TNSApplication.Wrap(TNSApplication.OCClass.sharedApplication).currentEvent;
+  if (Event = nil) or (Event.&type <> NSLeftMouseDown) then Exit;
+  Wnd := WindowHandleToPlatform(FForm.Handle).Wnd;
+  if NSObjectToID(Event.window) <> NSObjectToID(Wnd) then Exit;
+  try
+    TNSWindowDrag.Wrap(NSObjectToID(Wnd)).performWindowDragWithEvent(Event);
+  finally
+    // AppKit consumes the release; clear FMX state after MouseDown returns.
+    TThread.ForceQueue(nil, MacFinishWindowDrag);
+  end;
+end;
+
+procedure TnbWindowTitleBar.MacTitleDblClick(Sender: TObject);
+begin
+  if Assigned(FMacPreviousDblClick) then FMacPreviousDblClick(Sender);
+  if not FEnabled or not FMacUnifiedTitleBar or (FForm = nil) then Exit;
+  TThread.ForceQueue(nil, MacPerformTitleDoubleClick);
+end;
+
+procedure TnbWindowTitleBar.MacPerformTitleDoubleClick;
+var Wnd: NSWindow; Action: string; Defaults: NSUserDefaults;
+begin
+  if not FEnabled or not FMacUnifiedTitleBar or (FForm = nil) then Exit;
+  Wnd := WindowHandleToPlatform(FForm.Handle).Wnd;
+  if Wnd.styleMask and NSFullScreenWindowMask <> 0 then Exit;
+  Defaults := TNSUserDefaults.Wrap(TNSUserDefaults.OCClass.standardUserDefaults);
+  Action := NSStrToStr(Defaults.stringForKey(StrToNSStr('AppleActionOnDoubleClick')));
+  if SameText(Action, 'None') then Exit;
+  if SameText(Action, 'Minimize') then
+    Wnd.performMiniaturize(nil)
+  else
+    Wnd.zoom(nil);
+end;
+procedure TnbWindowTitleBar.MacFinishWindowDrag;
+begin
+  if FMacTitleDragControl <> nil then
+  begin
+    TnbMacControlAccess(FMacTitleDragControl).ReleaseCapture;
+    FMacTitleDragControl.Pressed := False;
+  end;
+end;
+
+procedure TnbWindowTitleBar.UpdateMacSystemButtons;
 var
   Wnd: NSWindow;
-  WinHandle: TMacWindowHandle;
+  Content, Parent: NSView;
+  Button: NSButton;
+  Header: TRectF;
+  Bounds, Target: NSRect;
+  Kind: Integer;
+  Left, Height: Single;
+begin
+  if FMacUpdating or (FForm = nil) or (FTitleControl = nil) or
+    not FMacUnifiedTitleBar then Exit;
+  FMacUpdating := True;
+  try
+    Wnd := WindowHandleToPlatform(FForm.Handle).Wnd;
+    // AppKit owns the revealable system title bar in native fullscreen.
+    if Wnd.styleMask and NSFullScreenWindowMask <> 0 then Exit;
+    Content := TNSView.Wrap(Wnd.contentView);
+    Header := FTitleControl.AbsoluteRect;
+    Height := Header.Height;
+    if Height <= 0 then Exit;
+    Left := 12;
+    for Kind := NSWindowCloseButton to NSWindowZoomButton do
+    begin
+      Button := Wnd.standardWindowButton(Kind);
+      if Button = nil then Continue;
+      Bounds := Button.frame;
+      Target := NSMakeRect(Left,
+        Content.bounds.size.height - Header.Top - (Height + Bounds.size.height) / 2,
+        Bounds.size.width, Bounds.size.height);
+      Parent := TNSView.Wrap(Button.superview);
+      if Parent = nil then Continue;
+      Target := Parent.convertRect(Target, Content);
+      if (Abs(Target.origin.x - Bounds.origin.x) > 0.1) or
+        (Abs(Target.origin.y - Bounds.origin.y) > 0.1) then
+        Button.setFrame(Target);
+      Left := Left + Bounds.size.width + 9;
+    end;
+    FMacSystemButtonsInset := Left + 7;
+  finally
+    FMacUpdating := False;
+  end;
+end;
+
+procedure TnbWindowTitleBar.SetupMacWindow;
+const FullSizeContentViewMask = NSUInteger(1 shl 15);
+var Wnd: NSWindow; WinHandle: TMacWindowHandle; Mask: NSUInteger;
 begin
   WinHandle := WindowHandleToPlatform(FForm.Handle);
-  if WinHandle = nil then
-    Exit;
-
+  if WinHandle = nil then Exit;
   Wnd := WinHandle.Wnd;
-
-  Wnd.setTitleVisibility(NSWindowTitleHidden);
-  Wnd.setTitlebarAppearsTransparent(True);
-  Wnd.setStyleMask(Wnd.styleMask or NSFullSizeContentViewWindowMask);
-  Wnd.setMovableByWindowBackground(True);
+  // Restore native behavior even when unified mode is disabled in fullscreen.
+  if not FMacUnifiedTitleBar or (FTitleControl = nil) then
+    RemoveMacTitleHandlers;
+  if Wnd.styleMask and NSFullScreenWindowMask <> 0 then Exit;
+  Wnd.setMovableByWindowBackground(False);
+  Mask := Wnd.styleMask;
+  if FMacUnifiedTitleBar and (FTitleControl <> nil) then
+  begin
+    if Mask and FullSizeContentViewMask = 0 then
+      Wnd.setStyleMask(Mask or FullSizeContentViewMask);
+    Wnd.setTitleVisibility(NSWindowTitleHidden);
+    Wnd.setTitlebarAppearsTransparent(True);
+    InstallMacTitleHandlers;
+    if not FMacMovableSaved then
+    begin
+      FMacOriginalMovable := Wnd.isMovable;
+      FMacMovableSaved := True;
+    end;
+    // The transparent native titlebar overlaps our tabs. Background-only
+    // suppression does not stop AppKit dragging that titlebar on real input.
+    // Empty FMX header space still opts into performWindowDragWithEvent.
+    Wnd.setMovable(False);
+    UpdateMacSystemButtons;
+  end
+  else
+  begin
+    RemoveMacTitleHandlers;
+    FMacSystemButtonsInset := 0;
+    if Mask and FullSizeContentViewMask <> 0 then
+      Wnd.setStyleMask(Mask and not FullSizeContentViewMask);
+    Wnd.setTitleVisibility(NSWindowTitleVisible);
+    Wnd.setTitlebarAppearsTransparent(False);
+  end;
 end;
 {$ENDIF}
 

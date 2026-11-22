@@ -1,0 +1,16 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{4A87A65F-DD24-4C6A-962E-2D398D68E50B}</ProjectGuid>
+    <MainSource>MacTitleBarSmoke.dpr</MainSource><Base>True</Base>
+    <Config>Debug</Config><Platform>OSXARM64</Platform>
+    <AppType>Application</AppType><FrameworkType>FMX</FrameworkType>
+    <ProjectVersion>20.5</ProjectVersion>
+    <DCC_Namespace>System;Xml;Data;FMX</DCC_Namespace>
+    <DCC_UnitSearchPath>..\..\src</DCC_UnitSearchPath>
+    <DCC_ExeOutput>..\..\bin\MacTitleBarSmoke</DCC_ExeOutput>
+    <DCC_DcuOutput>..\..\dcu\MacTitleBarSmoke</DCC_DcuOutput>
+    <BT_BuildType>Debug</BT_BuildType>
+  </PropertyGroup>
+  <ItemGroup><DelphiCompile Include="$(MainSource)"><MainSource>MainSource</MainSource></DelphiCompile></ItemGroup>
+  <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" />
+</Project>

@@ -34,6 +34,10 @@ const
   PANE_TAB_ICON_FONT = '';
   PANE_TAB_ICON_ADD = '+';
   PANE_TAB_ICON_CLOSE = 'x';
+  {$ELSEIF Defined(MACOS)}
+  PANE_TAB_ICON_FONT = '';
+  PANE_TAB_ICON_ADD = '+';
+  PANE_TAB_ICON_CLOSE = #$00D7;
   {$ELSE}
   PANE_TAB_ICON_FONT = 'Segoe MDL2 Assets';
   PANE_TAB_ICON_ADD = #$E710;
@@ -2718,7 +2722,8 @@ end;
 
 procedure TnbDockingPaneHost.LayoutTabBarChildren;
 var
-  BarSize, BtnSize: Single;
+  BarSize, BtnSize, AfterTabs: Single;
+  I: Integer;
 begin
   if FTabBar = nil then Exit;
 
@@ -2738,7 +2743,13 @@ begin
     end
     else
     begin
-      FAddButton.Position.X := FTabBar.Width - BtnSize - PANE_TAB_MARGIN;
+      AfterTabs := PANE_TAB_MARGIN;
+      for I := 0 to FTabButtons.Count - 1 do
+        if FTabButtons[I] <> nil then
+          AfterTabs := Max(AfterTabs, FTabButtons[I].Position.X +
+            FTabButtons[I].Width + PANE_TAB_SPACING);
+      FAddButton.Position.X := Min(AfterTabs,
+        Max(PANE_TAB_MARGIN, FTabBar.Width - BtnSize - PANE_TAB_MARGIN));
       FAddButton.Position.Y := (BarSize - BtnSize) / 2;
     end;
     if FAddButton.Visible then

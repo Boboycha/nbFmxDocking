@@ -40,6 +40,11 @@ const
   TAB_ICON_GROUP              = '*';
   TAB_ICON_CLOSE              = 'x';
   TAB_ICON_ADD                = '+';
+  {$ELSEIF Defined(MACOS)}
+  TAB_ICON_FONT               = '';
+  TAB_ICON_GROUP              = #$2261;
+  TAB_ICON_CLOSE              = #$00D7;
+  TAB_ICON_ADD                = '+';
   {$ELSE}
   TAB_ICON_FONT               = 'Segoe MDL2 Assets';
   TAB_ICON_GROUP              = #$E902;
